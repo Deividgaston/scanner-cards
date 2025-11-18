@@ -15,7 +15,7 @@ export function getFirebaseConfig() {
       projectId: "escaner-tarjetas",
       storageBucket: "escaner-tarjetas.firebasestorage.app",
       messagingSenderId: "879669401384",
-      appId: "1:879669401384:web:33a94e2e77610120b0221d"
+      appId: "1:879669401384:web:33a94e2e77610120b0221d",
   };
 }
 
