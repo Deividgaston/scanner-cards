@@ -1,7 +1,7 @@
-// app.js (versión Firebase, proyecto independiente)
+// app.js - App de tarjetas con Firebase Auth + Firestore + Storage + Lista blanca
+// 🔐 Compatible con API KEY dinámica almacenada en localStorage
 
-import { firebaseConfig } from "./firebase-config.js";
-
+import { firebaseConfig as defaultConfig } from "./firebase-config.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
   getFirestore,
@@ -11,6 +11,9 @@ import {
   doc,
   updateDoc,
   serverTimestamp,
+  query,
+  where,
+  getDoc,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
   getStorage,
@@ -18,19 +21,44 @@ import {
   uploadString,
   getDownloadURL,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
+import {
+  getAuth,
+  GoogleAuthProvider,
+  signInWithPopup,
+  onAuthStateChanged,
+  signOut,
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
-// ----- Inicializar Firebase -----
-// Suponiendo que ya has cargado los scripts de Firebase antes
-const firebaseConfig = window.getFirebaseConfig();
-const app = firebase.initializeApp(firebaseConfig);
+// ------------------------------------------------------------
+// 🔧 1. CARGA API KEY DINÁMICA DESDE LOCALSTORAGE
+// ------------------------------------------------------------
+let dynamicApiKey = localStorage.getItem("firebase_api_key");
+
+let firebaseConfig = {
+  ...defaultConfig,
+  apiKey: dynamicApiKey ? dynamicApiKey : defaultConfig.apiKey,
+};
+
+// ------------------------------------------------------------
+// 🚀 2. INICIALIZAR FIREBASE CON LA API KEY CORRECTA
+// ------------------------------------------------------------
+const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const storage = getStorage(app);
+const auth = getAuth(app);
+const provider = new GoogleAuthProvider();
 
-// ----- Estado en memoria -----
+// ------------------------------------------------------------
+// 🧠 3. ESTADOS DE LA APP
+// ------------------------------------------------------------
+let currentUser = null;
+let isAuthorized = false;
 let currentImageDataUrl = null;
 let cards = [];
 
-// ----- Selectores -----
+// ------------------------------------------------------------
+// 📌 4. SELECTORES DEL DOM
+// ------------------------------------------------------------
 const imageInput = document.getElementById("imageInput");
 const imagePreviewContainer = document.getElementById("imagePreviewContainer");
 const imagePreview = document.getElementById("imagePreview");
@@ -47,16 +75,89 @@ const saveStatus = document.getElementById("saveStatus");
 
 const cardsList = document.getElementById("cardsList");
 
-// ----- Al cargar la página: leer tarjetas de Firestore -----
-document.addEventListener("DOMContentLoaded", async () => {
-  await loadCardsFromFirestore();
-  renderCardsList();
+const loginButton = document.getElementById("loginButton");
+const logoutButton = document.getElementById("logoutButton");
+const authStatus = document.getElementById("authStatus");
+const authUserInfo = document.getElementById("authUserInfo");
+const authLoginArea = document.getElementById("authLoginArea");
+const userNameSpan = document.getElementById("userName");
+const userEmailSpan = document.getElementById("userEmail");
+const userAvatarImg = document.getElementById("userAvatar");
+
+// ------------------------------------------------------------
+// ⛔ 5. DESACTIVAR UI HASTA QUE SE COMPRUEBEN PERMISOS
+// ------------------------------------------------------------
+enableAppUI(false);
+
+// ------------------------------------------------------------
+// 🔐 6. LOGIN CON GOOGLE
+// ------------------------------------------------------------
+loginButton.addEventListener("click", async () => {
+  try {
+    authStatus.textContent = "Abriendo ventana de Google...";
+    await signInWithPopup(auth, provider);
+  } catch (error) {
+    console.error(error);
+    authStatus.textContent = "Error al iniciar sesión con Google.";
+  }
 });
 
-// ----- Manejo de imagen -----
-imageInput.addEventListener("change", handleImageSelected);
+logoutButton.addEventListener("click", async () => {
+  try {
+    await signOut(auth);
+  } catch (error) {
+    console.error(error);
+    authStatus.textContent = "Error al cerrar sesión.";
+  }
+});
 
-function handleImageSelected(event) {
+// ------------------------------------------------------------
+// 🔍 7. CUANDO CAMBIA EL ESTADO DE LOGIN
+// ------------------------------------------------------------
+onAuthStateChanged(auth, async (user) => {
+  currentUser = user;
+
+  if (user) {
+    authStatus.textContent = "Comprobando permisos...";
+    isAuthorized = await checkUserAuthorization(user);
+
+    const displayName = user.displayName || "Usuario";
+    const email = user.email || "";
+    const photoURL = user.photoURL;
+
+    authUserInfo.hidden = false;
+    authLoginArea.style.display = "none";
+
+    userNameSpan.textContent = displayName;
+    userEmailSpan.textContent = email;
+    userAvatarImg.src =
+      photoURL ||
+      "https://ui-avatars.com/api/?name=" + encodeURIComponent(displayName);
+
+    if (!isAuthorized) {
+      authStatus.textContent =
+        "No tienes permisos para usar esta aplicación.";
+      enableAppUI(false);
+      cards = [];
+      renderCardsList();
+      clearForm(true);
+      return;
+    }
+
+    authStatus.textContent = "Sesión iniciada.";
+    enableAppUI(true);
+
+    await loadCardsFromFirestore(user.uid);
+    renderCardsList();
+  } else {
+    resetUserState();
+  }
+});
+
+// ------------------------------------------------------------
+// 📷 8. SUBIR FOTO
+// ------------------------------------------------------------
+imageInput.addEventListener("change", (event) => {
   const file = event.target.files[0];
   if (!file) return;
 
@@ -65,409 +166,231 @@ function handleImageSelected(event) {
     currentImageDataUrl = e.target.result;
     imagePreview.src = currentImageDataUrl;
     imagePreviewContainer.classList.remove("hidden");
-    scanButton.disabled = false;
-    ocrStatus.textContent =
-      "Imagen cargada. Pulsa en escanear para extraer los datos.";
+    scanButton.disabled = !(currentUser && isAuthorized);
+    ocrStatus.textContent = "Imagen cargada. Listo para escanear.";
   };
   reader.readAsDataURL(file);
-}
-
-// ----- Botón OCR -----
-scanButton.addEventListener("click", async () => {
-  if (!currentImageDataUrl) return;
-
-  ocrStatus.textContent = "Procesando OCR, espera un momento...";
-  scanButton.disabled = true;
-
-  try {
-    // Sustituye esta función por tu OCR real (como en la otra app)
-    const text = await performFakeOCR(currentImageDataUrl);
-
-    ocrStatus.textContent =
-      "OCR completado. Rellena o corrige los datos antes de guardar.";
-
-    const parsed = parseBusinessCardText(text);
-
-    if (!nameInput.value) nameInput.value = parsed.name || "";
-    if (!companyInput.value) companyInput.value = parsed.company || "";
-    if (!phoneInput.value) phoneInput.value = parsed.phone || "";
-    if (!emailInput.value) emailInput.value = parsed.email || "";
-    if (!notesInput.value) notesInput.value = parsed.notes || "";
-  } catch (error) {
-    console.error(error);
-    ocrStatus.textContent = "Error al procesar el OCR. Inténtalo de nuevo.";
-  } finally {
-    scanButton.disabled = false;
-  }
 });
 
-// ----- Guardar contacto (Firestore + Storage) -----
-saveContactButton.addEventListener("click", async () => {
-  const name = nameInput.value.trim();
-  const company = companyInput.value.trim();
-  const phone = phoneInput.value.trim();
-  const email = emailInput.value.trim();
-  const notes = notesInput.value.trim();
-
-  if (!name && !phone && !email) {
-    saveStatus.textContent =
-      "Introduce al menos un nombre, teléfono o email para guardar.";
+// ------------------------------------------------------------
+// 🔎 9. OCR (FAKE, SE PUEDE CAMBIAR POR EL REAL)
+// ------------------------------------------------------------
+scanButton.addEventListener("click", async () => {
+  if (!currentUser || !isAuthorized) {
+    ocrStatus.textContent =
+      "No tienes permisos para usar el OCR.";
     return;
   }
 
-  const normalizedPhone = normalizePhone(phone);
-  const normalizedEmail = email.toLowerCase();
+  ocrStatus.textContent = "Procesando OCR...";
+  scanButton.disabled = true;
 
-  // Buscar duplicados en el array local (ya viene de Firestore)
-  const existingIndex = cards.findIndex((card) => {
-    const cPhone = normalizePhone(card.phone || "");
-    const cEmail = (card.email || "").toLowerCase();
+  const text = await performFakeOCR(currentImageDataUrl);
+  const parsed = parseBusinessCardText(text);
+
+  if (!nameInput.value) nameInput.value = parsed.name || "";
+  if (!companyInput.value) companyInput.value = parsed.company || "";
+  if (!phoneInput.value) phoneInput.value = parsed.phone || "";
+  if (!emailInput.value) emailInput.value = parsed.email || "";
+
+  ocrStatus.textContent = "OCR completado.";
+
+  scanButton.disabled = false;
+});
+
+// ------------------------------------------------------------
+// 💾 10. GUARDAR TARJETA
+// ------------------------------------------------------------
+saveContactButton.addEventListener("click", async () => {
+  if (!currentUser || !isAuthorized) {
+    saveStatus.textContent =
+      "No tienes permisos para guardar tarjetas.";
+    return;
+  }
+
+  let name = nameInput.value.trim();
+  let company = companyInput.value.trim();
+  let phone = phoneInput.value.trim();
+  let email = emailInput.value.trim();
+
+  if (!name && !phone && !email) {
+    saveStatus.textContent =
+      "Debe haber como mínimo nombre, teléfono o email.";
+    return;
+  }
+
+  const phoneNorm = normalizePhone(phone);
+  const emailNorm = email.toLowerCase();
+
+  const exists = cards.findIndex((c) => {
     return (
-      (normalizedPhone && cPhone && cPhone === normalizedPhone) ||
-      (normalizedEmail && cEmail && cEmail === normalizedEmail)
+      (phoneNorm && normalizePhone(c.phone || "") === phoneNorm) ||
+      (emailNorm && (c.email || "").toLowerCase() === emailNorm)
     );
   });
 
+  saveStatus.textContent = "Guardando tarjeta...";
+  saveContactButton.disabled = true;
+
+  let imageUrl = null;
+  let storagePath = null;
+
   try {
-    saveStatus.textContent = "Guardando tarjeta...";
-    saveContactButton.disabled = true;
-
-    let imageUrl = null;
-    let storagePath = null;
-
-    // Si hay imagen, la subimos a Storage
     if (currentImageDataUrl) {
-      // Si actualizamos, intentamos reutilizar el mismo path
-      const idForImage =
-        existingIndex !== -1 ? cards[existingIndex].id : Date.now().toString();
+      const id =
+        exists !== -1 ? cards[exists].id : Date.now().toString();
 
-      storagePath = `cards-images/${idForImage}.jpg`;
+      storagePath = `cards-images/${id}.jpg`;
       const imageRef = ref(storage, storagePath);
 
-      // currentImageDataUrl es un dataURL (base64), usamos uploadString
       await uploadString(imageRef, currentImageDataUrl, "data_url");
       imageUrl = await getDownloadURL(imageRef);
-    } else if (existingIndex !== -1) {
-      // Si no hay nueva imagen pero actualizamos, mantenemos la anterior
-      imageUrl = cards[existingIndex].imageUrl || null;
-      storagePath = cards[existingIndex].storagePath || null;
     }
 
-    if (existingIndex !== -1) {
-      // Actualizar tarjeta existente en Firestore
-      const existing = cards[existingIndex];
+    if (exists !== -1) {
+      // actualizar
+      const card = cards[exists];
+      const docRef = doc(db, "cards", card.id);
 
-      const confirmUpdate = confirm(
-        `Ya existe una tarjeta con ese teléfono o email:\n\n` +
-          `Nombre: ${existing.name || "-"}\n` +
-          `Empresa: ${existing.company || "-"}\n\n` +
-          `¿Quieres actualizarla con los nuevos datos?`
-      );
-
-      if (!confirmUpdate) {
-        saveStatus.textContent = "Tarjeta no guardada para evitar duplicado.";
-        return;
-      }
-
-      const docRef = doc(db, "cards", existing.id);
       await updateDoc(docRef, {
+        userId: currentUser.uid,
         name,
         company,
         phone,
         email,
-        notes,
-        imageUrl: imageUrl || null,
-        storagePath: storagePath || null,
+        imageUrl,
+        storagePath,
         updatedAt: serverTimestamp(),
       });
 
-      // Actualizar en el array local
-      cards[existingIndex] = {
-        ...existing,
-        name,
-        company,
-        phone,
-        email,
-        notes,
-        imageUrl: imageUrl || null,
-        storagePath: storagePath || null,
-      };
-
-      saveStatus.textContent = "Tarjeta actualizada correctamente.";
+      saveStatus.textContent = "Tarjeta actualizada.";
     } else {
-      // Crear nueva tarjeta en Firestore
-      const newData = {
+      // crear nueva
+      const newCard = {
+        userId: currentUser.uid,
         name,
         company,
         phone,
         email,
-        notes,
-        imageUrl: imageUrl || null,
-        storagePath: storagePath || null,
+        imageUrl,
+        storagePath,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       };
 
-      const docRef = await addDoc(collection(db, "cards"), newData);
+      const docRef = await addDoc(collection(db, "cards"), newCard);
+      cards.unshift({ id: docRef.id, ...newCard });
 
-      // Añadir al array local
-      cards.unshift({
-        id: docRef.id,
-        ...newData,
-      });
-
-      saveStatus.textContent = "Tarjeta guardada correctamente.";
+      saveStatus.textContent = "Tarjeta guardada.";
     }
 
     renderCardsList();
-    clearForm(false);
-  } catch (error) {
-    console.error(error);
-    saveStatus.textContent = "Error al guardar la tarjeta.";
-  } finally {
-    saveContactButton.disabled = false;
+  } catch (e) {
+    console.error(e);
+    saveStatus.textContent = "Error al guardar.";
   }
+
+  saveContactButton.disabled = false;
 });
 
-// ----- Leer tarjetas desde Firestore -----
-async function loadCardsFromFirestore() {
-  try {
-    const snapshot = await getDocs(collection(db, "cards"));
-    const list = [];
-    snapshot.forEach((docSnap) => {
-      list.push({
-        id: docSnap.id,
-        ...docSnap.data(),
-      });
-    });
+// ------------------------------------------------------------
+// 📥 11. CARGAR TARJETAS
+// ------------------------------------------------------------
+async function loadCardsFromFirestore(uid) {
+  cards = [];
 
-    // Orden aproximado por fecha de creación (si no la hay, lo dejamos tal cual)
-    list.sort((a, b) => {
-      const aTime = a.createdAt?.seconds || 0;
-      const bTime = b.createdAt?.seconds || 0;
-      return bTime - aTime;
-    });
+  const q = query(
+    collection(db, "cards"),
+    where("userId", "==", uid)
+  );
 
-    cards = list;
-  } catch (error) {
-    console.error("Error al cargar tarjetas:", error);
-    cards = [];
-  }
-}
-
-// ----- Render listado -----
-function renderCardsList() {
-  if (!cards.length) {
-    cardsList.innerHTML =
-      '<p style="font-size:0.85rem;color:#6b7280;">No hay tarjetas guardadas todavía.</p>';
-    return;
-  }
-
-  cardsList.innerHTML = "";
-
-  cards.forEach((card) => {
-    const div = document.createElement("div");
-    div.className = "saved-card";
-
-    const thumb = document.createElement("div");
-    thumb.className = "saved-card-thumbnail";
-    if (card.imageUrl) {
-      const img = document.createElement("img");
-      img.src = card.imageUrl;
-      img.alt = card.name || "Tarjeta";
-      thumb.appendChild(img);
-    } else {
-      thumb.textContent = "T";
-    }
-
-    const content = document.createElement("div");
-    content.className = "saved-card-content";
-
-    const title = document.createElement("div");
-    title.className = "saved-card-title";
-    title.textContent = card.name || "(Sin nombre)";
-
-    const subtitle = document.createElement("div");
-    subtitle.className = "saved-card-subtitle";
-    subtitle.textContent = card.company || "";
-
-    const meta = document.createElement("div");
-    meta.className = "saved-card-meta";
-    const phonePart = card.phone ? `📞 ${card.phone}` : "";
-    const emailPart = card.email ? ` · ✉️ ${card.email}` : "";
-    meta.textContent = phonePart + emailPart;
-
-    content.appendChild(title);
-    content.appendChild(subtitle);
-    content.appendChild(meta);
-
-    const actions = document.createElement("div");
-    actions.className = "saved-card-actions";
-
-    const btnLoad = document.createElement("button");
-    btnLoad.className = "btn small-btn secondary-btn";
-    btnLoad.textContent = "Editar";
-    btnLoad.addEventListener("click", () => loadCardIntoForm(card.id));
-
-    const btnExport = document.createElement("button");
-    btnExport.className = "btn small-btn primary-btn";
-    btnExport.textContent = "Guardar en contactos";
-    btnExport.addEventListener("click", () => exportAsVCard(card));
-
-    actions.appendChild(btnLoad);
-    actions.appendChild(btnExport);
-
-    div.appendChild(thumb);
-    div.appendChild(content);
-    div.appendChild(actions);
-
-    cardsList.appendChild(div);
+  const snap = await getDocs(q);
+  snap.forEach((docSnap) => {
+    cards.push({ id: docSnap.id, ...docSnap.data() });
   });
+
+  cards.sort((a, b) => b.createdAt?.seconds - a.createdAt?.seconds);
 }
 
-// ----- Cargar tarjeta en formulario -----
-function loadCardIntoForm(cardId) {
-  const card = cards.find((c) => c.id === cardId);
-  if (!card) return;
-
-  nameInput.value = card.name || "";
-  companyInput.value = card.company || "";
-  phoneInput.value = card.phone || "";
-  emailInput.value = card.email || "";
-  notesInput.value = card.notes || "";
-
-  if (card.imageUrl) {
-    currentImageDataUrl = null; // no tenemos el dataURL original, pero no pasa nada
-    imagePreview.src = card.imageUrl;
-    imagePreviewContainer.classList.remove("hidden");
-    scanButton.disabled = false;
-  } else {
-    currentImageDataUrl = null;
-    imagePreview.src = "";
-    imagePreviewContainer.classList.add("hidden");
-    scanButton.disabled = true;
-  }
-
-  saveStatus.textContent =
-    "Tarjeta cargada en el formulario. Modifica y guarda para actualizar.";
+// ------------------------------------------------------------
+// 🔐 12. AUTORIZACIÓN (LISTA BLANCA)
+// ------------------------------------------------------------
+async function checkUserAuthorization(user) {
+  const docRef = doc(db, "allowedUsers", user.uid);
+  const snap = await getDoc(docRef);
+  return snap.exists();
 }
 
-// ----- Exportar a VCard (.vcf) -----
-function exportAsVCard(card) {
-  const name = card.name || "";
-  const company = card.company || "";
-  const phone = card.phone || "";
-  const email = card.email || "";
-
-  let vcard = "BEGIN:VCARD\nVERSION:3.0\n";
-  if (name) vcard += `FN:${name}\n`;
-  if (company) vcard += `ORG:${company}\n`;
-  if (phone) vcard += `TEL;TYPE=CELL:${phone}\n`;
-  if (email) vcard += `EMAIL;TYPE=INTERNET:${email}\n`;
-  vcard += "END:VCARD";
-
-  const blob = new Blob([vcard], { type: "text/vcard;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-
-  const a = document.createElement("a");
-  a.href = url;
-  const safeName = name || "contacto";
-  a.download = `${safeName.replace(/\s+/g, "_")}.vcf`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-
-// ----- Utilidades -----
-function clearForm(clearImage = true) {
-  // Aquí si quieres puedes limpiar los campos de texto
-  // nameInput.value = "";
-  // companyInput.value = "";
-  // phoneInput.value = "";
-  // emailInput.value = "";
-  // notesInput.value = "";
-
-  if (clearImage) {
-    currentImageDataUrl = null;
-    imagePreview.src = "";
-    imagePreviewContainer.classList.add("hidden");
-    scanButton.disabled = true;
-    ocrStatus.textContent = "";
-  }
-}
-
-function normalizePhone(phone) {
-  return (phone || "").replace(/\D+/g, "");
-}
-
-// ----- OCR falso (para pruebas) -----
-async function performFakeOCR(imageDataUrl) {
-  await new Promise((res) => setTimeout(res, 1200));
-
-  const fakeText = `
-    Nombre Apellido
-    Cargo
-    Empresa Ejemplo
-    Tel: +34 600 123 456
-    Email: ejemplo@empresa.com
-  `;
-  return fakeText;
-}
-
-// ----- Parser sencillo del texto OCR -----
+// ------------------------------------------------------------
+// 📄 13. PARSEADOR OCR
+// ------------------------------------------------------------
 function parseBusinessCardText(text) {
   const result = {
     name: "",
     company: "",
     phone: "",
     email: "",
-    notes: "",
   };
 
-  if (!text) return result;
+  const lines = text.split("\n").map((l) => l.trim());
 
-  const lines = text
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter(Boolean);
-
-  const emailRegex = /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/;
-  const phoneRegex = /(\+?\d[\d\s\-\(\)]{6,}\d)/;
+  const phoneRegex = /(\\+?\\d[\\d\\s\\-]{7,}\\d)/;
+  const emailRegex = /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[A-Za-z]{2,})/;
 
   for (const line of lines) {
-    const emailMatch = line.match(emailRegex);
-    if (emailMatch && !result.email) {
-      result.email = emailMatch[1];
-    }
+    if (!result.email && emailRegex.test(line))
+      result.email = line.match(emailRegex)[1];
 
-    const phoneMatch = line.match(phoneRegex);
-    if (phoneMatch && !result.phone) {
-      result.phone = phoneMatch[1];
-    }
+    if (!result.phone && phoneRegex.test(line))
+      result.phone = line.match(phoneRegex)[1];
   }
 
-  if (lines.length > 0) {
-    const first = lines[0];
-    if (!emailRegex.test(first) && first.split(" ").length >= 2) {
-      result.name = first;
-    }
-  }
-
-  for (let i = 1; i < Math.min(lines.length, 4); i++) {
-    const line = lines[i];
-    if (
-      !emailRegex.test(line) &&
-      !phoneRegex.test(line) &&
-      !line.toLowerCase().startsWith("tel") &&
-      !line.toLowerCase().startsWith("mov") &&
-      !line.toLowerCase().startsWith("phone") &&
-      !line.toLowerCase().startsWith("email")
-    ) {
-      result.company = line;
-      break;
-    }
-  }
+  result.name = lines[0] || "";
+  result.company = lines[1] || "";
 
   return result;
+}
+
+// ------------------------------------------------------------
+// 🛠 UTILIDADES
+// ------------------------------------------------------------
+function normalizePhone(p) {
+  return (p || "").replace(/\\D+/g, "");
+}
+
+function enableAppUI(state) {
+  const canUse = state && currentUser && isAuthorized;
+
+  imageInput.disabled = !canUse;
+  scanButton.disabled = !canUse || !currentImageDataUrl;
+  saveContactButton.disabled = !canUse;
+}
+
+function clearForm() {
+  currentImageDataUrl = null;
+  imagePreview.src = "";
+  imagePreviewContainer.classList.add("hidden");
+  scanButton.disabled = true;
+}
+
+function resetUserState() {
+  authStatus.textContent = "Inicia sesión con Google.";
+  authUserInfo.hidden = true;
+  authLoginArea.style.display = "block";
+  cards = [];
+  renderCardsList();
+  enableAppUI(false);
+  clearForm(true);
+}
+
+// ------------------------------------------------------------
+// 🎭 14. OCR FALSO (puedes sustituirlo por el real)
+// ------------------------------------------------------------
+async function performFakeOCR() {
+  return `
+    Nombre Apellido
+    Empresa Demo
+    Tel: +34 600 123 456
+    Email: ejemplo@demo.com
+  `;
 }
