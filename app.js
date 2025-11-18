@@ -20,7 +20,9 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
 
 // ----- Inicializar Firebase -----
-const app = initializeApp(firebaseConfig);
+// Suponiendo que ya has cargado los scripts de Firebase antes
+const firebaseConfig = window.getFirebaseConfig();
+const app = firebase.initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const storage = getStorage(app);
 
