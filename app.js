@@ -1,4 +1,7 @@
-import { firebaseBaseConfig } from "./firebase-config.js";
+// app.js - Escáner de tarjetas con Firebase Auth + Firestore + Storage
+// Usa la API key guardada en localStorage (firebaseApiKey)
+
+import { getFirebaseConfig } from "./firebase-config.js";
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
@@ -6,12 +9,9 @@ import {
   collection,
   addDoc,
   getDocs,
-  doc,
-  updateDoc,
-  serverTimestamp,
   query,
   where,
-  getDoc,
+  serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
   getStorage,
@@ -27,40 +27,26 @@ import {
   signOut,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
-
-// 🔥 1. Obtener API KEY desde localStorage
-const apiKey = localStorage.getItem("FIREBASE_API_KEY");
-
-if (!apiKey) {
-  alert("Falta la API KEY. Pulsa 'Cambiar API Key de Firebase'.");
-  throw new Error("No Firebase API Key");
-}
-
-// 🔥 2. Construir config final de Firebase
-const firebaseConfig = {
-  ...firebaseBaseConfig,
-  apiKey: apiKey,
-};
-
-// 🔥 3. Inicializar Firebase
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-const storage = getStorage(app);
-const auth = getAuth(app);
-const provider = new GoogleAuthProvider();
-
-
-// --- Estados ---
+let app, db, storage, auth, provider;
 let currentUser = null;
-let isAuthorized = false;
 let cards = [];
 let currentImageDataUrl = null;
 
+// Inicializar Firebase leyendo la API key desde localStorage
+try {
+  const firebaseConfig = getFirebaseConfig();
+  app = initializeApp(firebaseConfig);
+  db = getFirestore(app);
+  storage = getStorage(app);
+  auth = getAuth(app);
+  provider = new GoogleAuthProvider();
+  console.log("✅ Firebase inicializado correctamente");
+} catch (error) {
+  console.error("Error al inicializar Firebase:", error);
+}
 
-// --- Esperar a que cargue el DOM ---
 window.addEventListener("DOMContentLoaded", () => {
-
-  console.log("🔥 Firebase inicializado con API Key:", apiKey);
+  console.log("✅ DOM listo");
 
   const loginButton = document.getElementById("loginButton");
   const logoutButton = document.getElementById("logoutButton");
@@ -87,59 +73,79 @@ window.addEventListener("DOMContentLoaded", () => {
 
   const cardsList = document.getElementById("cardsList");
 
-  authStatus.textContent = "Introduce la API Key si no está configurada.";
+  // Si Firebase NO se pudo inicializar (no hay API key)
+  if (!app || !auth) {
+    if (authStatus) {
+      authStatus.textContent =
+        "Falta configurar la API key. Pulsa 'Configurar API Key de Firebase'.";
+    }
+    if (loginButton) loginButton.disabled = true;
+    if (logoutButton) logoutButton.disabled = true;
+    if (imageInput) imageInput.disabled = true;
+    if (scanButton) scanButton.disabled = true;
+    if (saveContactButton) saveContactButton.disabled = true;
+    return;
+  }
 
+  authStatus.textContent = "App cargada. Inicia sesión con Google.";
+
+  // Login con Google
   loginButton.addEventListener("click", async () => {
-    authStatus.textContent = "Abriendo Google...";
+    authStatus.textContent = "Abriendo ventana de Google...";
+    console.log("🟢 Click en Iniciar sesión");
     try {
       await signInWithPopup(auth, provider);
-    } catch (err) {
-      console.error(err);
-      authStatus.textContent = "Error: " + (err.code || err.message);
+    } catch (error) {
+      console.error("Error en signInWithPopup:", error);
+      authStatus.textContent =
+        "Error al iniciar sesión: " + (error.code || error.message);
     }
   });
 
+  // Logout
   logoutButton.addEventListener("click", async () => {
-    await signOut(auth);
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error(error);
+      authStatus.textContent = "Error al cerrar sesión.";
+    }
   });
 
+  // Cambios de sesión
   onAuthStateChanged(auth, async (user) => {
-    if (!user) {
-      currentUser = null;
-      isAuthorized = false;
+    currentUser = user;
 
+    if (!user) {
+      console.log("👤 Usuario deslogueado");
       authUserInfo.hidden = true;
       authLoginArea.style.display = "block";
-      authStatus.textContent = "Inicia sesión con Google.";
-
+      authStatus.textContent = "Inicia sesión con Google para usar la app.";
       cards = [];
-      cardsList.innerHTML = "";
+      renderCardsList(cardsList);
+      toggleAppUI(false, { imageInput, scanButton, saveContactButton });
       return;
     }
 
-    currentUser = user;
-    authStatus.textContent = "Verificando permisos...";
-
-    isAuthorized = await checkUserAuthorization(user);
-
-    userNameSpan.textContent = user.displayName;
-    userEmailSpan.textContent = user.email;
-    userAvatarImg.src = user.photoURL;
-
+    console.log("👤 Usuario autenticado:", user.uid);
     authUserInfo.hidden = false;
     authLoginArea.style.display = "none";
 
-    if (!isAuthorized) {
-      authStatus.textContent =
-        "No tienes permisos. Debes estar en la lista allowedUsers.";
-      return;
-    }
+    userNameSpan.textContent = user.displayName || "Usuario";
+    userEmailSpan.textContent = user.email || "";
+    userAvatarImg.src =
+      user.photoURL ||
+      "https://ui-avatars.com/api/?name=" + encodeURIComponent(user.displayName || "U");
 
-    authStatus.textContent = "Sesión iniciada.";
+    authStatus.textContent = "Sesión iniciada correctamente.";
+
+    toggleAppUI(true, { imageInput, scanButton, saveContactButton });
+
     await loadCardsFromFirestore(user.uid);
     renderCardsList(cardsList);
   });
 
+  // Subir imagen
   imageInput.addEventListener("change", (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -150,13 +156,15 @@ window.addEventListener("DOMContentLoaded", () => {
       imagePreview.src = currentImageDataUrl;
       imagePreviewContainer.classList.remove("hidden");
       scanButton.disabled = false;
+      ocrStatus.textContent = "Imagen cargada. Pulsa en escanear para extraer datos.";
     };
     reader.readAsDataURL(file);
   });
 
+  // OCR falso
   scanButton.addEventListener("click", async () => {
-    ocrStatus.textContent = "OCR en proceso...";
-
+    if (!currentImageDataUrl) return;
+    ocrStatus.textContent = "Procesando OCR...";
     const text = await performFakeOCR();
     const parsed = parseBusinessCardText(text);
 
@@ -165,107 +173,130 @@ window.addEventListener("DOMContentLoaded", () => {
     phoneInput.value = parsed.phone;
     emailInput.value = parsed.email;
 
-    ocrStatus.textContent = "OCR completado.";
+    ocrStatus.textContent = "OCR completado. Revisa los datos antes de guardar.";
   });
 
+  // Guardar tarjeta
   saveContactButton.addEventListener("click", async () => {
-    if (!currentUser || !isAuthorized) {
-      saveStatus.textContent = "No autorizado.";
+    if (!currentUser) {
+      saveStatus.textContent = "Inicia sesión para guardar tarjetas.";
       return;
     }
 
-    saveStatus.textContent = "Guardando...";
+    const name = nameInput.value.trim();
+    const company = companyInput.value.trim();
+    const phone = phoneInput.value.trim();
+    const email = emailInput.value.trim();
+    const notes = notesInput.value.trim();
 
+    if (!name && !phone && !email) {
+      saveStatus.textContent =
+        "Introduce al menos nombre, teléfono o email para guardar.";
+      return;
+    }
+
+    saveStatus.textContent = "Guardando tarjeta...";
     let imageUrl = null;
     let storagePath = null;
 
-    if (currentImageDataUrl) {
-      const id = Date.now().toString();
-      storagePath = `cards-images/${id}.jpg`;
+    try {
+      if (currentImageDataUrl) {
+        const id = Date.now().toString();
+        storagePath = `cards-images/${id}.jpg`;
+        const imageRef = ref(storage, storagePath);
+        await uploadString(imageRef, currentImageDataUrl, "data_url");
+        imageUrl = await getDownloadURL(imageRef);
+      }
 
-      const imageRef = ref(storage, storagePath);
-      await uploadString(imageRef, currentImageDataUrl, "data_url");
+      const newCard = {
+        userId: currentUser.uid,
+        name,
+        company,
+        phone,
+        email,
+        notes,
+        imageUrl,
+        storagePath,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
 
-      imageUrl = await getDownloadURL(imageRef);
+      const docRef = await addDoc(collection(db, "cards"), newCard);
+      cards.unshift({ id: docRef.id, ...newCard });
+
+      saveStatus.textContent = "Tarjeta guardada correctamente.";
+      renderCardsList(cardsList);
+    } catch (error) {
+      console.error(error);
+      saveStatus.textContent = "Error al guardar la tarjeta.";
     }
-
-    const newCard = {
-      userId: currentUser.uid,
-      name: nameInput.value,
-      company: companyInput.value,
-      phone: phoneInput.value,
-      email: emailInput.value,
-      notes: notesInput.value,
-      imageUrl,
-      storagePath,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    };
-
-    const refNew = await addDoc(collection(db, "cards"), newCard);
-    cards.unshift({ id: refNew.id, ...newCard });
-
-    saveStatus.textContent = "Tarjeta guardada.";
-    renderCardsList(cardsList);
   });
 });
 
+// ---------- Funciones auxiliares ----------
 
-// --- Lista blanca ---
-async function checkUserAuthorization(user) {
-  const docRef = doc(getFirestore(), "allowedUsers", user.uid);
-  const snap = await getDoc(docRef);
-  return snap.exists();
-}
-
-
-// --- Cargar tarjetas ---
 async function loadCardsFromFirestore(uid) {
-  const q = query(collection(getFirestore(), "cards"), where("userId", "==", uid));
-  const snap = await getDocs(q);
-
-  cards = [];
-  snap.forEach((docSnap) => {
-    cards.push({ id: docSnap.id, ...docSnap.data() });
-  });
+  try {
+    const q = query(collection(getFirestore(), "cards"), where("userId", "==", uid));
+    const snap = await getDocs(q);
+    cards = [];
+    snap.forEach((docSnap) => {
+      cards.push({ id: docSnap.id, ...docSnap.data() });
+    });
+  } catch (error) {
+    console.error("Error al cargar tarjetas:", error);
+  }
 }
 
+function renderCardsList(container) {
+  if (!container) return;
 
-// --- Render ---
-function renderCardsList(cardsList) {
-  cardsList.innerHTML = "";
-
-  if (!cards.length) {
-    cardsList.innerHTML = "<p>No hay tarjetas guardadas.</p>";
+  if (!currentUser) {
+    container.innerHTML =
+      "<p style='font-size:0.85rem;color:#9ca3af;'>Inicia sesión para ver tus tarjetas.</p>";
     return;
   }
 
-  cards.forEach((c) => {
+  if (!cards.length) {
+    container.innerHTML =
+      "<p style='font-size:0.85rem;color:#9ca3af;'>No hay tarjetas guardadas todavía.</p>";
+    return;
+  }
+
+  container.innerHTML = "";
+  cards.forEach((card) => {
     const div = document.createElement("div");
     div.className = "saved-card";
 
-    div.innerHTML = `
-      <div class="saved-card-thumbnail">
-        ${c.imageUrl ? `<img src="${c.imageUrl}" />` : "T"}
-      </div>
+    const thumb = card.imageUrl
+      ? `<img src="${card.imageUrl}" alt="Tarjeta" />`
+      : "T";
 
+    div.innerHTML = `
+      <div class="saved-card-thumbnail">${thumb}</div>
       <div class="saved-card-content">
-        <div class="saved-card-title">${c.name || "Sin nombre"}</div>
-        <div class="saved-card-subtitle">${c.company || ""}</div>
+        <div class="saved-card-title">${card.name || "Sin nombre"}</div>
+        <div class="saved-card-subtitle">${card.company || ""}</div>
         <div class="saved-card-meta">
-          ${c.phone ? "📞 " + c.phone : ""}
-          ${c.email ? " · ✉️ " + c.email : ""}
+          ${card.phone ? "📞 " + card.phone : ""}
+          ${card.email ? " · ✉️ " + card.email : ""}
         </div>
       </div>
     `;
-    cardsList.appendChild(div);
+
+    container.appendChild(div);
   });
 }
 
+function toggleAppUI(enabled, { imageInput, scanButton, saveContactButton }) {
+  imageInput.disabled = !enabled;
+  scanButton.disabled = !enabled || !currentImageDataUrl;
+  saveContactButton.disabled = !enabled;
+}
 
-// --- OCR Fake (simulado) ---
+// Simulación de OCR para pruebas
 async function performFakeOCR() {
-  await new Promise((res) => setTimeout(res, 800));
+  await new Promise((r) => setTimeout(r, 800));
   return `
     Nombre Apellido
     Empresa Ejemplo
@@ -276,14 +307,23 @@ async function performFakeOCR() {
 
 function parseBusinessCardText(text) {
   const result = { name: "", company: "", phone: "", email: "" };
-  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  if (!text) return result;
+
+  const lines = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
 
   const emailRegex = /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[A-Za-z]{2,})/;
   const phoneRegex = /(\+?\d[\d\s\-]{7,}\d)/;
 
   for (const line of lines) {
-    if (emailRegex.test(line)) result.email = line.match(emailRegex)[1];
-    if (phoneRegex.test(line)) result.phone = line.match(phoneRegex)[1];
+    if (!result.email && emailRegex.test(line)) {
+      result.email = line.match(emailRegex)[1];
+    }
+    if (!result.phone && phoneRegex.test(line)) {
+      result.phone = line.match(phoneRegex)[1];
+    }
   }
 
   result.name = lines[0] || "";
