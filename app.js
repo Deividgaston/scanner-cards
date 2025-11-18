@@ -1,6 +1,4 @@
-// app.js — versión limpia con Auth + Firestore + Storage + lista blanca
-
-import { firebaseConfig } from "./firebase-config.js";
+import { firebaseBaseConfig } from "./firebase-config.js";
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
@@ -29,24 +27,41 @@ import {
   signOut,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
-// Inicializamos Firebase (esto puede ir fuera del DOMContentLoaded)
+
+// 🔥 1. Obtener API KEY desde localStorage
+const apiKey = localStorage.getItem("FIREBASE_API_KEY");
+
+if (!apiKey) {
+  alert("Falta la API KEY. Pulsa 'Cambiar API Key de Firebase'.");
+  throw new Error("No Firebase API Key");
+}
+
+// 🔥 2. Construir config final de Firebase
+const firebaseConfig = {
+  ...firebaseBaseConfig,
+  apiKey: apiKey,
+};
+
+// 🔥 3. Inicializar Firebase
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const storage = getStorage(app);
 const auth = getAuth(app);
 const provider = new GoogleAuthProvider();
 
-// Estado global
+
+// --- Estados ---
 let currentUser = null;
 let isAuthorized = false;
-let currentImageDataUrl = null;
 let cards = [];
+let currentImageDataUrl = null;
 
-// Todo el acceso al DOM lo hacemos cuando la página ya está cargada
+
+// --- Esperar a que cargue el DOM ---
 window.addEventListener("DOMContentLoaded", () => {
-  console.log("App JS cargado y DOM listo");
 
-  // --- Selectores de elementos ---
+  console.log("🔥 Firebase inicializado con API Key:", apiKey);
+
   const loginButton = document.getElementById("loginButton");
   const logoutButton = document.getElementById("logoutButton");
   const authStatus = document.getElementById("authStatus");
@@ -72,308 +87,184 @@ window.addEventListener("DOMContentLoaded", () => {
 
   const cardsList = document.getElementById("cardsList");
 
-  // Mensaje de que la app ha cargado
-  if (authStatus) {
-    authStatus.textContent = "App cargada. Inicia sesión con Google.";
-  }
+  authStatus.textContent = "Introduce la API Key si no está configurada.";
 
-  // Desactivamos la UI al principio
-  enableAppUI(false, { imageInput, scanButton, saveContactButton });
-
-  // --- Login Google ---
   loginButton.addEventListener("click", async () => {
-    authStatus.textContent = "Abriendo ventana de Google...";
-    console.log("Click en botón de login");
-
+    authStatus.textContent = "Abriendo Google...";
     try {
       await signInWithPopup(auth, provider);
-      // El resto se gestiona en onAuthStateChanged
-    } catch (error) {
-      console.error("Error en signInWithPopup:", error);
-      authStatus.textContent = "Error: " + (error.code || error.message);
+    } catch (err) {
+      console.error(err);
+      authStatus.textContent = "Error: " + (err.code || err.message);
     }
   });
 
   logoutButton.addEventListener("click", async () => {
-    try {
-      await signOut(auth);
-    } catch (error) {
-      console.error(error);
-      authStatus.textContent = "Error al cerrar sesión.";
-    }
+    await signOut(auth);
   });
 
-  // --- Cambios en el estado de autenticación ---
   onAuthStateChanged(auth, async (user) => {
-    currentUser = user;
-
-    if (user) {
-      authStatus.textContent = "Comprobando permisos...";
-      console.log("Usuario autenticado:", user.uid);
-
-      isAuthorized = await checkUserAuthorization(user);
-
-      const displayName = user.displayName || "Usuario";
-      const email = user.email || "";
-      const photoURL = user.photoURL;
-
-      authUserInfo.hidden = false;
-      authLoginArea.style.display = "none";
-
-      userNameSpan.textContent = displayName;
-      userEmailSpan.textContent = email;
-      userAvatarImg.src =
-        photoURL ||
-        "https://ui-avatars.com/api/?name=" + encodeURIComponent(displayName);
-
-      if (!isAuthorized) {
-        authStatus.textContent =
-          "Tu cuenta no está autorizada para usar esta app.";
-        enableAppUI(false, { imageInput, scanButton, saveContactButton });
-        cardsList.innerHTML =
-          '<p style="font-size:0.85rem;color:#9ca3af;">Sin permisos.</p>';
-        return;
-      }
-
-      authStatus.textContent = "Sesión iniciada correctamente.";
-      enableAppUI(true, { imageInput, scanButton, saveContactButton });
-
-      await loadCardsFromFirestore(user.uid);
-      renderCardsList(cards, cardsList);
-    } else {
-      console.log("Usuario deslogueado");
+    if (!user) {
       currentUser = null;
       isAuthorized = false;
 
       authUserInfo.hidden = true;
       authLoginArea.style.display = "block";
-      authStatus.textContent = "Inicia sesión con Google para usar la app.";
+      authStatus.textContent = "Inicia sesión con Google.";
 
       cards = [];
-      renderCardsList(cards, cardsList);
-      enableAppUI(false, { imageInput, scanButton, saveContactButton });
-      clearForm({ imagePreviewContainer, imagePreview, scanButton, ocrStatus });
+      cardsList.innerHTML = "";
+      return;
     }
+
+    currentUser = user;
+    authStatus.textContent = "Verificando permisos...";
+
+    isAuthorized = await checkUserAuthorization(user);
+
+    userNameSpan.textContent = user.displayName;
+    userEmailSpan.textContent = user.email;
+    userAvatarImg.src = user.photoURL;
+
+    authUserInfo.hidden = false;
+    authLoginArea.style.display = "none";
+
+    if (!isAuthorized) {
+      authStatus.textContent =
+        "No tienes permisos. Debes estar en la lista allowedUsers.";
+      return;
+    }
+
+    authStatus.textContent = "Sesión iniciada.";
+    await loadCardsFromFirestore(user.uid);
+    renderCardsList(cardsList);
   });
 
-  // --- Manejo de imagen ---
-  imageInput.addEventListener("change", (event) => {
-    const file = event.target.files[0];
+  imageInput.addEventListener("change", (e) => {
+    const file = e.target.files[0];
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (e) => {
-      currentImageDataUrl = e.target.result;
+    reader.onload = (ev) => {
+      currentImageDataUrl = ev.target.result;
       imagePreview.src = currentImageDataUrl;
       imagePreviewContainer.classList.remove("hidden");
-      scanButton.disabled = !(currentUser && isAuthorized);
-      ocrStatus.textContent = "Imagen lista para escanear.";
+      scanButton.disabled = false;
     };
     reader.readAsDataURL(file);
   });
 
-  // --- Botón OCR ---
   scanButton.addEventListener("click", async () => {
-    if (!currentUser || !isAuthorized) {
-      ocrStatus.textContent =
-        "No tienes permisos para usar el OCR.";
-      return;
-    }
+    ocrStatus.textContent = "OCR en proceso...";
 
-    if (!currentImageDataUrl) return;
+    const text = await performFakeOCR();
+    const parsed = parseBusinessCardText(text);
 
-    scanButton.disabled = true;
-    ocrStatus.textContent = "Procesando OCR...";
+    nameInput.value = parsed.name;
+    companyInput.value = parsed.company;
+    phoneInput.value = parsed.phone;
+    emailInput.value = parsed.email;
 
-    try {
-      const text = await performFakeOCR();
-      const parsed = parseBusinessCardText(text);
-
-      nameInput.value = parsed.name || "";
-      companyInput.value = parsed.company || "";
-      phoneInput.value = parsed.phone || "";
-      emailInput.value = parsed.email || "";
-
-      ocrStatus.textContent = "OCR completado.";
-    } catch (error) {
-      console.error(error);
-      ocrStatus.textContent = "Error al ejecutar OCR.";
-    } finally {
-      scanButton.disabled = false;
-    }
+    ocrStatus.textContent = "OCR completado.";
   });
 
-  // --- Guardar contacto ---
   saveContactButton.addEventListener("click", async () => {
     if (!currentUser || !isAuthorized) {
-      saveStatus.textContent = "No tienes permisos para guardar.";
-      return;
-    }
-
-    const name = nameInput.value.trim();
-    const company = companyInput.value.trim();
-    const phone = phoneInput.value.trim();
-    const email = emailInput.value.trim();
-    const notes = notesInput.value.trim();
-
-    if (!name && !phone && !email) {
-      saveStatus.textContent =
-        "Introduce al menos nombre, teléfono o email.";
+      saveStatus.textContent = "No autorizado.";
       return;
     }
 
     saveStatus.textContent = "Guardando...";
-    saveContactButton.disabled = true;
 
     let imageUrl = null;
     let storagePath = null;
 
-    try {
-      if (currentImageDataUrl) {
-        const id = Date.now().toString();
-        storagePath = `cards-images/${id}.jpg`;
-        const imageRef = ref(storage, storagePath);
+    if (currentImageDataUrl) {
+      const id = Date.now().toString();
+      storagePath = `cards-images/${id}.jpg`;
 
-        await uploadString(imageRef, currentImageDataUrl, "data_url");
-        imageUrl = await getDownloadURL(imageRef);
-      }
+      const imageRef = ref(storage, storagePath);
+      await uploadString(imageRef, currentImageDataUrl, "data_url");
 
-      const newCard = {
-        userId: currentUser.uid,
-        name,
-        company,
-        phone,
-        email,
-        notes,
-        imageUrl,
-        storagePath,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      };
-
-      const docRef = await addDoc(collection(db, "cards"), newCard);
-      cards.unshift({ id: docRef.id, ...newCard });
-
-      saveStatus.textContent = "Tarjeta guardada.";
-      renderCardsList(cards, cardsList);
-    } catch (error) {
-      console.error(error);
-      saveStatus.textContent = "Error al guardar la tarjeta.";
-    } finally {
-      saveContactButton.disabled = false;
+      imageUrl = await getDownloadURL(imageRef);
     }
+
+    const newCard = {
+      userId: currentUser.uid,
+      name: nameInput.value,
+      company: companyInput.value,
+      phone: phoneInput.value,
+      email: emailInput.value,
+      notes: notesInput.value,
+      imageUrl,
+      storagePath,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    };
+
+    const refNew = await addDoc(collection(db, "cards"), newCard);
+    cards.unshift({ id: refNew.id, ...newCard });
+
+    saveStatus.textContent = "Tarjeta guardada.";
+    renderCardsList(cardsList);
   });
 });
 
-// ------------------------------------------------------------
-// 🔐 Lista blanca allowedUsers
-// ------------------------------------------------------------
+
+// --- Lista blanca ---
 async function checkUserAuthorization(user) {
-  try {
-    const docRef = doc(db, "allowedUsers", user.uid);
-    const snap = await getDoc(docRef);
-    return snap.exists();
-  } catch (error) {
-    console.error("Error comprobando autorización:", error);
-    return false;
-  }
+  const docRef = doc(getFirestore(), "allowedUsers", user.uid);
+  const snap = await getDoc(docRef);
+  return snap.exists();
 }
 
-// ------------------------------------------------------------
-// 🔄 Cargar tarjetas desde Firestore
-// ------------------------------------------------------------
+
+// --- Cargar tarjetas ---
 async function loadCardsFromFirestore(uid) {
+  const q = query(collection(getFirestore(), "cards"), where("userId", "==", uid));
+  const snap = await getDocs(q);
+
   cards = [];
-
-  try {
-    const cardsRef = collection(db, "cards");
-    const q = query(cardsRef, where("userId", "==", uid));
-    const snapshot = await getDocs(q);
-
-    snapshot.forEach((docSnap) => {
-      cards.push({ id: docSnap.id, ...docSnap.data() });
-    });
-
-    cards.sort((a, b) => {
-      const aTime = a.createdAt?.seconds || 0;
-      const bTime = b.createdAt?.seconds || 0;
-      return bTime - aTime;
-    });
-  } catch (error) {
-    console.error("Error cargando tarjetas:", error);
-  }
+  snap.forEach((docSnap) => {
+    cards.push({ id: docSnap.id, ...docSnap.data() });
+  });
 }
 
-// ------------------------------------------------------------
-// 🖼 Renderizar tarjetas
-// ------------------------------------------------------------
-function renderCardsList(cards, cardsList) {
-  if (!cardsList) return;
 
-  if (!currentUser || !isAuthorized) {
-    cardsList.innerHTML =
-      '<p style="font-size:0.85rem;color:#9ca3af;">Inicia sesión con un usuario autorizado.</p>';
-    return;
-  }
-
-  if (!cards.length) {
-    cardsList.innerHTML =
-      '<p style="font-size:0.85rem;color:#9ca3af;">No hay tarjetas guardadas todavía.</p>';
-    return;
-  }
-
+// --- Render ---
+function renderCardsList(cardsList) {
   cardsList.innerHTML = "";
 
-  cards.forEach((card) => {
+  if (!cards.length) {
+    cardsList.innerHTML = "<p>No hay tarjetas guardadas.</p>";
+    return;
+  }
+
+  cards.forEach((c) => {
     const div = document.createElement("div");
     div.className = "saved-card";
 
-    const imagePart = card.imageUrl
-      ? `<img src="${card.imageUrl}" alt="${card.name || "Tarjeta"}" />`
-      : "T";
-
     div.innerHTML = `
       <div class="saved-card-thumbnail">
-        ${imagePart}
+        ${c.imageUrl ? `<img src="${c.imageUrl}" />` : "T"}
       </div>
+
       <div class="saved-card-content">
-        <div class="saved-card-title">${card.name || "Sin nombre"}</div>
-        <div class="saved-card-subtitle">${card.company || ""}</div>
+        <div class="saved-card-title">${c.name || "Sin nombre"}</div>
+        <div class="saved-card-subtitle">${c.company || ""}</div>
         <div class="saved-card-meta">
-          ${card.phone ? `📞 ${card.phone}` : ""}
-          ${card.email ? ` · ✉️ ${card.email}` : ""}
+          ${c.phone ? "📞 " + c.phone : ""}
+          ${c.email ? " · ✉️ " + c.email : ""}
         </div>
       </div>
     `;
-
     cardsList.appendChild(div);
   });
 }
 
-// ------------------------------------------------------------
-// 🛠 Utilidades de UI
-// ------------------------------------------------------------
-function enableAppUI(enabled, { imageInput, scanButton, saveContactButton }) {
-  const canUse = enabled && currentUser && isAuthorized;
 
-  if (imageInput) imageInput.disabled = !canUse;
-  if (scanButton) scanButton.disabled = !canUse || !currentImageDataUrl;
-  if (saveContactButton) saveContactButton.disabled = !canUse;
-}
-
-function clearForm({ imagePreviewContainer, imagePreview, scanButton, ocrStatus }) {
-  currentImageDataUrl = null;
-  if (imagePreview) imagePreview.src = "";
-  if (imagePreviewContainer) imagePreviewContainer.classList.add("hidden");
-  if (scanButton) scanButton.disabled = true;
-  if (ocrStatus) ocrStatus.textContent = "";
-}
-
-// ------------------------------------------------------------
-// OCR Fake
-// ------------------------------------------------------------
+// --- OCR Fake (simulado) ---
 async function performFakeOCR() {
-  // Simulamos un pequeño delay
   await new Promise((res) => setTimeout(res, 800));
   return `
     Nombre Apellido
@@ -383,34 +274,16 @@ async function performFakeOCR() {
   `;
 }
 
-// ------------------------------------------------------------
-// Parseo de texto de tarjeta
-// ------------------------------------------------------------
 function parseBusinessCardText(text) {
-  const result = {
-    name: "",
-    company: "",
-    phone: "",
-    email: "",
-  };
-
-  if (!text) return result;
-
-  const lines = text
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter(Boolean);
+  const result = { name: "", company: "", phone: "", email: "" };
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
 
   const emailRegex = /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[A-Za-z]{2,})/;
   const phoneRegex = /(\+?\d[\d\s\-]{7,}\d)/;
 
   for (const line of lines) {
-    if (!result.email && emailRegex.test(line)) {
-      result.email = line.match(emailRegex)[1];
-    }
-    if (!result.phone && phoneRegex.test(line)) {
-      result.phone = line.match(phoneRegex)[1];
-    }
+    if (emailRegex.test(line)) result.email = line.match(emailRegex)[1];
+    if (phoneRegex.test(line)) result.phone = line.match(phoneRegex)[1];
   }
 
   result.name = lines[0] || "";
