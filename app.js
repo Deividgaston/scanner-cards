@@ -1,34 +1,91 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8" />
-  <title>Escáner de Tarjetas de Visita</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="stylesheet" href="styles.css" />
-</head>
+import { getFirebaseConfig } from "./firebase-config.js";
 
-<body>
-  <header class="app-header">
-    <h1>Tarjetas de Visita</h1>
-    <p>Escanea tarjetas, guarda contactos y gestiona tu red de forma sencilla.</p>
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {
+  getFirestore,
+  collection,
+  addDoc,
+  getDocs,
+  query,
+  where,
+  serverTimestamp,
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import {
+  getStorage,
+  ref,
+  uploadString,
+  getDownloadURL,
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
+import {
+  getAuth,
+  GoogleAuthProvider,
+  signInWithPopup,
+  onAuthStateChanged,
+  signOut,
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
-    <!-- Botón para configurar la API key -->
-    <div style="margin-top:0.75rem;">
-      <button class="btn primary-btn" onclick="configurarApiKey()">
-        Configurar API Key de Firebase
-      </button>
-    </div>
+let app, db, storage, auth, provider;
 
-    <div class="auth-bar">
-      <div class="auth-user" id="authUserInfo" hidden>
-        <img id="userAvatar" class="auth-avatar" alt="avatar" />
-        <div class="auth-text">
-          <span id="userName"></span>
-          <span id="userEmail"></span>
-        </div>
-        <button id="logoutButton" class="btn small-btn secondary-btn">
-          Cerrar sesión
-        </button>
-      </div>
+let currentUser = null;
+let currentImageDataUrl = null;
+let cards = [];
 
-      <div id="auth
+// Inicializar Firebase
+try {
+  const config = getFirebaseConfig();
+  app = initializeApp(config);
+  db = getFirestore(app);
+  storage = getStorage(app);
+  auth = getAuth(app);
+  provider = new GoogleAuthProvider();
+  console.log("✅ Firebase cargado");
+} catch (err) {
+  console.error("Error inicializando Firebase:", err);
+}
+
+// DOM
+window.addEventListener("DOMContentLoaded", () => {
+  console.log("✅ DOM listo");
+
+  const loginButton = document.getElementById("loginButton");
+  const logoutButton = document.getElementById("logoutButton");
+  const authStatus = document.getElementById("authStatus");
+  const authUserInfo = document.getElementById("authUserInfo");
+  const authLoginArea = document.getElementById("authLoginArea");
+  const userNameSpan = document.getElementById("userName");
+  const userEmailSpan = document.getElementById("userEmail");
+  const userAvatarImg = document.getElementById("userAvatar");
+
+  const imageInput = document.getElementById("imageInput");
+  const imagePreview = document.getElementById("imagePreview");
+  const imagePreviewContainer = document.getElementById("imagePreviewContainer");
+
+  const rotateButton = document.getElementById("rotateButton");
+  const scanButton = document.getElementById("scanButton");
+  const ocrStatus = document.getElementById("ocrStatus");
+
+  const nameInput = document.getElementById("nameInput");
+  const companyInput = document.getElementById("companyInput");
+  const phoneInput = document.getElementById("phoneInput");
+  const emailInput = document.getElementById("emailInput");
+  const notesInput = document.getElementById("notesInput");
+  const saveContactButton = document.getElementById("saveContactButton");
+  const saveStatus = document.getElementById("saveStatus");
+
+  const cardsList = document.getElementById("cardsList");
+
+  // Si Firebase no está bien configurado, bloqueamos
+  if (!app || !auth) {
+    authStatus.textContent =
+      "Falta configurar Firebase. Usa 'Configurar API Key de Firebase'.";
+    disableApp();
+    return;
+  }
+
+  // --- LOGIN ---
+  loginButton.onclick = async () => {
+    try {
+      authStatus.textContent = "Abriendo Google...";
+      await signInWithPopup(auth, provider);
+    } catch (err) {
+      authStatus.textContent = "Error login: " + (err.code || err.message);
