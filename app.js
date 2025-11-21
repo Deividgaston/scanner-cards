@@ -4,13 +4,13 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import {
   getFirestore,
   collection,
- addDoc,
- getDocs,
- query,
- where,
- serverTimestamp,
- doc,
- deleteDoc,
+  addDoc,
+  getDocs,
+  query,
+  where,
+  serverTimestamp,
+  doc,
+  deleteDoc,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
   getStorage,
@@ -32,6 +32,7 @@ let app, db, storage, auth, provider;
 let currentUser = null;
 let currentImageDataUrl = null;
 let cards = [];
+let dashboardVisible = false;
 
 // Inicializar Firebase
 try {
@@ -70,11 +71,17 @@ window.addEventListener("DOMContentLoaded", () => {
   const companyInput = document.getElementById("companyInput");
   const phoneInput = document.getElementById("phoneInput");
   const emailInput = document.getElementById("emailInput");
+  const regionInput = document.getElementById("regionInput");
+  const categoryInput = document.getElementById("categoryInput");
   const notesInput = document.getElementById("notesInput");
   const saveContactButton = document.getElementById("saveContactButton");
   const saveStatus = document.getElementById("saveStatus");
 
   const cardsList = document.getElementById("cardsList");
+
+  const dashboardToggleButton = document.getElementById("dashboardToggleButton");
+  const dashboardSection = document.getElementById("dashboardSection");
+  const dashboardContent = document.getElementById("dashboardContent");
 
   // Si Firebase no está bien configurado, bloqueamos
   if (!app || !auth) {
@@ -108,6 +115,8 @@ window.addEventListener("DOMContentLoaded", () => {
       authLoginArea.style.display = "block";
       authStatus.textContent = "Inicia sesión con Google.";
       cardsList.innerHTML = "";
+      dashboardSection.classList.add("hidden");
+      dashboardVisible = false;
       disableApp();
       return;
     }
@@ -199,6 +208,8 @@ window.addEventListener("DOMContentLoaded", () => {
     const company = companyInput.value.trim();
     const phone = phoneInput.value.trim();
     const email = emailInput.value.trim();
+    const region = regionInput.value.trim();
+    const category = categoryInput.value;
     const notes = notesInput.value.trim();
 
     if (!name && !phone && !email) {
@@ -233,6 +244,8 @@ window.addEventListener("DOMContentLoaded", () => {
         company,
         phone,
         email,
+        region,
+        category,
         notes,
         imageUrl,
         storagePath,
@@ -241,7 +254,6 @@ window.addEventListener("DOMContentLoaded", () => {
 
       saveStatus.textContent = "Tarjeta guardada correctamente.";
 
-      // Añadimos también a la lista local
       cards.unshift({
         id: docRef.id,
         userId: currentUser.uid,
@@ -249,12 +261,15 @@ window.addEventListener("DOMContentLoaded", () => {
         company,
         phone,
         email,
+        region,
+        category,
         notes,
         imageUrl,
         storagePath,
       });
 
       renderCards(cardsList);
+      if (dashboardVisible) buildDashboard(dashboardContent);
     } catch (err) {
       console.error("Error guardando tarjeta:", err);
       saveStatus.textContent = "Error guardando la tarjeta.";
@@ -278,10 +293,8 @@ window.addEventListener("DOMContentLoaded", () => {
     if (!ok) return;
 
     try {
-      // 1. Borrar documento en Firestore
       await deleteDoc(doc(db, "cards", cardId));
 
-      // 2. Borrar imagen en Storage (si tiene)
       if (storagePath) {
         try {
           await deleteObject(ref(storage, storagePath));
@@ -290,14 +303,29 @@ window.addEventListener("DOMContentLoaded", () => {
         }
       }
 
-      // 3. Actualizar lista local y volver a pintar
       cards = cards.filter((c) => c.id !== cardId);
       renderCards(cardsList);
+      if (dashboardVisible) buildDashboard(dashboardContent);
     } catch (err) {
       console.error("Error borrando tarjeta:", err);
       alert("Error al borrar la tarjeta.");
     }
   });
+
+  // --- TOGGLE DASHBOARD (solo escritorio) ---
+  if (dashboardToggleButton) {
+    dashboardToggleButton.onclick = () => {
+      dashboardVisible = !dashboardVisible;
+      if (dashboardVisible) {
+        dashboardSection.classList.remove("hidden");
+        dashboardToggleButton.textContent = "Ocultar dashboard";
+        buildDashboard(dashboardContent);
+      } else {
+        dashboardSection.classList.add("hidden");
+        dashboardToggleButton.textContent = "Ver dashboard";
+      }
+    };
+  }
 
   function disableApp() {
     imageInput.disabled = true;
@@ -317,9 +345,7 @@ async function loadCards(uid) {
   cards = [];
   const q = query(collection(db, "cards"), where("userId", "==", uid));
   const snap = await getDocs(q);
-  snap.forEach((docSnap) =>
-    cards.push({ id: docSnap.id, ...docSnap.data() })
-  );
+  snap.forEach((docSnap) => cards.push({ id: docSnap.id, ...docSnap.data() }));
 }
 
 function renderCards(container) {
@@ -341,6 +367,9 @@ function renderCards(container) {
     div.dataset.id = card.id;
     div.dataset.storagePath = card.storagePath || "";
 
+    const regionText = card.region ? ` · ${card.region}` : "";
+    const catText = card.category ? ` · ${card.category}` : "";
+
     div.innerHTML = `
       <div class="saved-card-thumbnail">
         ${card.imageUrl ? `<img src="${card.imageUrl}" />` : "T"}
@@ -349,7 +378,7 @@ function renderCards(container) {
         <div class="saved-card-title">${card.name || "Sin nombre"}</div>
         <div class="saved-card-subtitle">${card.company || ""}</div>
         <div class="saved-card-meta">
-          ${card.phone || ""} ${card.email ? " · " + card.email : ""}
+          ${card.phone || ""} ${card.email ? " · " + card.email : ""}${regionText}${catText}
         </div>
       </div>
       <div class="saved-card-actions">
@@ -359,6 +388,49 @@ function renderCards(container) {
 
     container.appendChild(div);
   });
+}
+
+// Construir dashboard simple por tipo y región
+function buildDashboard(container) {
+  const total = cards.length;
+
+  const byCategory = {};
+  const byRegion = {};
+
+  cards.forEach((card) => {
+    const cat = card.category || "Sin categoría";
+    const reg = card.region || "Sin región";
+
+    byCategory[cat] = (byCategory[cat] || 0) + 1;
+    byRegion[reg] = (byRegion[reg] || 0) + 1;
+  });
+
+  let html = "";
+
+  html += `<div class="dashboard-block">
+    <h3>Resumen general</h3>
+    <p>Total tarjetas: <strong>${total}</strong></p>
+  </div>`;
+
+  html += `<div class="dashboard-block">
+    <h3>Por tipo de contacto</h3>
+    <ul class="dashboard-list">
+      ${Object.entries(byCategory)
+        .map(([cat, count]) => `<li>${cat}: <strong>${count}</strong></li>`)
+        .join("")}
+    </ul>
+  </div>`;
+
+  html += `<div class="dashboard-block">
+    <h3>Por zona / región</h3>
+    <ul class="dashboard-list">
+      ${Object.entries(byRegion)
+        .map(([reg, count]) => `<li>${reg}: <strong>${count}</strong></li>`)
+        .join("")}
+    </ul>
+  </div>`;
+
+  container.innerHTML = html;
 }
 
 // Rotar la imagen 90º usando canvas
