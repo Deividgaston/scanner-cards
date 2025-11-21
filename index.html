@@ -1,1 +1,191 @@
-<html><body><h1>App Tarjetas</h1></body></html>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Escáner de Tarjetas de Visita</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+
+<body>
+  <header class="app-header">
+    <h1>Tarjetas de Visita</h1>
+    <p>Escanea tarjetas, guarda contactos y gestiona tu red profesional.</p>
+
+    <!-- Botón para configurar la API key -->
+    <div style="margin-top:0.75rem;">
+      <button class="btn primary-btn" onclick="configurarApiKey()">
+        Configurar API Key de Firebase
+      </button>
+    </div>
+
+    <div class="auth-bar">
+      <div class="auth-user" id="authUserInfo" hidden>
+        <div class="auth-text">
+          <span id="userName"></span>
+          <span id="userEmail"></span>
+        </div>
+        <button id="logoutButton" class="btn small-btn secondary-btn">
+          Cerrar sesión
+        </button>
+      </div>
+
+      <div id="authLoginArea">
+        <button id="loginButton" class="btn secondary-btn">
+          Iniciar sesión con Google
+        </button>
+      </div>
+    </div>
+
+    <p id="authStatus" class="status-text"></p>
+  </header>
+
+  <main class="container">
+
+    <!-- Subida de imagen -->
+    <section class="card capture-card">
+      <h2>Nueva tarjeta</h2>
+
+      <label class="btn primary-btn">
+        📷 Hacer foto / Subir imagen
+        <input id="imageInput" type="file" accept="image/*" capture="environment" hidden />
+      </label>
+
+      <div id="imagePreviewContainer" class="image-preview hidden">
+        <img id="imagePreview" alt="Previsualización tarjeta" />
+      </div>
+
+      <button id="rotateButton" class="btn secondary-btn" disabled>
+        ↪️ Rotar 90º
+      </button>
+
+      <button id="scanButton" class="btn secondary-btn" disabled>
+        🔍 Escanear tarjeta (OCR)
+      </button>
+
+      <p id="ocrStatus" class="status-text"></p>
+    </section>
+
+    <!-- Formulario -->
+    <section class="card form-card">
+      <h2>Datos del contacto</h2>
+
+      <div class="form-group">
+        <label for="nameInput">Nombre completo</label>
+        <input id="nameInput" type="text" placeholder="Nombre y apellidos" />
+      </div>
+
+      <div class="form-group">
+        <label for="companyInput">Empresa</label>
+        <input id="companyInput" type="text" placeholder="Empresa" />
+      </div>
+
+      <div class="form-group">
+        <label for="positionInput">Cargo en la empresa</label>
+        <input
+          id="positionInput"
+          type="text"
+          placeholder="Director de proyectos, CEO, Responsable técnico..."
+        />
+      </div>
+
+      <div class="form-group">
+        <label for="phoneInput">Teléfono</label>
+        <input id="phoneInput" type="tel" placeholder="+34 600 000 000" />
+      </div>
+
+      <div class="form-group">
+        <label for="emailInput">Email</label>
+        <input id="emailInput" type="email" placeholder="nombre@empresa.com" />
+      </div>
+
+      <div class="form-group">
+        <label for="websiteInput">Página web</label>
+        <input
+          id="websiteInput"
+          type="url"
+          placeholder="https://www.empresa.com"
+        />
+      </div>
+
+      <div class="form-group">
+        <label for="regionInput">Zona / Región</label>
+        <input id="regionInput" type="text" placeholder="Madrid, Málaga, Valencia..." />
+      </div>
+
+      <div class="form-group">
+        <label for="categoryInput">Tipo de contacto</label>
+        <select id="categoryInput">
+          <option value="">Seleccionar...</option>
+          <option value="Promotor">Promotor</option>
+          <option value="Ingeniería">Ingeniería</option>
+          <option value="Arquitecto">Arquitecto</option>
+          <option value="Integrator Partner">Integrator Partner</option>
+          <option value="Otro">Otro</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="notesInput">Notas</label>
+        <textarea id="notesInput" rows="3"></textarea>
+      </div>
+
+      <button id="saveContactButton" class="btn primary-btn">Guardar tarjeta</button>
+      <p id="saveStatus" class="status-text"></p>
+    </section>
+
+    <!-- Panel de líneas OCR (nuevo) -->
+    <section class="card ocr-lines-card">
+      <h3>Líneas detectadas del OCR</h3>
+      <p style="font-size:0.85rem;color:#888">Selecciona qué representa cada línea:</p>
+      <div id="ocrLinesContainer"></div>
+    </section>
+
+    <!-- Listado + botón Dashboard -->
+    <section class="card list-card">
+      <div class="list-header">
+        <h2>Tarjetas guardadas</h2>
+        <button
+          id="dashboardToggleButton"
+          class="btn small-btn secondary-btn desktop-only"
+        >
+          Ver dashboard
+        </button>
+      </div>
+      <div id="cardsList" class="cards-list"></div>
+    </section>
+
+    <!-- Dashboard -->
+    <section
+      class="card dashboard-card desktop-only hidden"
+      id="dashboardSection"
+    >
+      <h2>Dashboard de contactos</h2>
+      <div id="dashboardContent" class="dashboard-content"></div>
+    </section>
+
+  </main>
+
+  <footer class="app-footer">
+    <small>App tarjetas de visita · v1.0</small>
+  </footer>
+
+  <script>
+    function configurarApiKey() {
+      const actual = localStorage.getItem("firebaseApiKey") || "";
+      const key = prompt("Introduce tu API key de Firebase:", actual);
+      if (key) {
+        localStorage.setItem("firebaseApiKey", key.trim());
+        alert("API key guardada. Recarga la página.");
+        location.reload();
+      }
+    }
+  </script>
+
+  <!-- Tesseract.js para OCR REAL -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
+  <!-- Lógica -->
+  <script type="module" src="app.js"></script>
+</body>
+</html>
