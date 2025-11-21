@@ -13,10 +13,10 @@ export function getFirebaseConfig() {
     apiKey: apiKey.trim(),
     // ⚠️ Estos valores debes ponerlos EXACTAMENTE como salen en firebaseConfig
     // en Firebase Console → Configuración del proyecto → General → app Web (</>)
-    authDomain: "escaner-tarjetas.firebaseapp.com",
-    projectId: "escaner-tarjetas",
-    storageBucket: "escaner-tarjetas.appspot.com",
-    messagingSenderId: "TU_MESSAGING_SENDER_ID",
-    appId: "TU_APP_ID",
+      authDomain: "escaner-tarjetas.firebaseapp.com",
+  projectId: "escaner-tarjetas",
+  storageBucket: "escaner-tarjetas.firebasestorage.app",
+  messagingSenderId: "879669401384",
+  appId: "1:879669401384:web:33a94e2e77610120b0221d",
   };
 }
