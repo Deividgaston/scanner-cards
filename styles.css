@@ -6,7 +6,7 @@
 }
 
 body {
-  background: #0f172a;
+  background: #020617;
   color: #e5e7eb;
   min-height: 100vh;
 }
@@ -48,18 +48,57 @@ body {
   margin-bottom: 0.75rem;
 }
 
-/* Botones */
+/* Auth bar */
+.auth-bar {
+  margin-top: 0.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: center;
+}
+
+.auth-user {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.auth-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  object-fit: cover;
+  border: 1px solid #1f2937;
+}
+
+.auth-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.auth-text span:first-child {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.auth-text span:last-child {
+  font-size: 0.75rem;
+  color: #9ca3af;
+}
+
+/* Buttons */
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0.75rem 1rem;
+  padding: 0.7rem 1rem;
   border-radius: 999px;
   border: none;
   cursor: pointer;
   font-weight: 600;
   font-size: 0.95rem;
-  gap: 0.4rem;
+  gap: 0.35rem;
   margin-top: 0.5rem;
   transition: opacity 0.15s ease, transform 0.1s ease;
 }
@@ -84,7 +123,12 @@ body {
   border: 1px solid #374151;
 }
 
-/* Imagen previa */
+.small-btn {
+  font-size: 0.7rem;
+  padding: 0.35rem 0.6rem;
+}
+
+/* Image preview */
 .image-preview {
   margin-top: 0.75rem;
   border-radius: 0.75rem;
@@ -103,7 +147,7 @@ body {
   display: none;
 }
 
-/* Formulario */
+/* Form */
 .form-card .form-group {
   margin-bottom: 0.75rem;
 }
@@ -132,14 +176,14 @@ body {
   border-color: #22c55e;
 }
 
-/* Estados */
+/* Status */
 .status-text {
   margin-top: 0.4rem;
   font-size: 0.8rem;
   color: #9ca3af;
 }
 
-/* Lista tarjetas guardadas */
+/* Saved cards list */
 .cards-list {
   display: flex;
   flex-direction: column;
@@ -197,18 +241,6 @@ body {
   margin-top: 0.1rem;
 }
 
-.saved-card-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  margin-left: 0.5rem;
-}
-
-.small-btn {
-  font-size: 0.7rem;
-  padding: 0.35rem 0.6rem;
-}
-
 /* Footer */
 .app-footer {
   text-align: center;
@@ -217,7 +249,7 @@ body {
   color: #6b7280;
 }
 
-/* Desktop */
+/* Layout */
 @media (min-width: 768px) {
   .container {
     display: grid;
@@ -236,10 +268,5 @@ body {
   }
   .list-card {
     grid-area: list;
-  }
-
-  .saved-card-actions {
-    flex-direction: row;
-    align-items: center;
   }
 }
