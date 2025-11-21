@@ -21,7 +21,6 @@
 
     <div class="auth-bar">
       <div class="auth-user" id="authUserInfo" hidden>
-        <!-- Sin avatar, solo texto -->
         <div class="auth-text">
           <span id="userName"></span>
           <span id="userEmail"></span>
@@ -135,7 +134,7 @@
       <p id="saveStatus" class="status-text"></p>
     </section>
 
-    <!-- Listado + botón Dashboard (solo escritorio) -->
+    <!-- Listado + botón Dashboard -->
     <section class="card list-card">
       <div class="list-header">
         <h2>Tarjetas guardadas</h2>
@@ -149,7 +148,7 @@
       <div id="cardsList" class="cards-list"></div>
     </section>
 
-    <!-- Dashboard (solo escritorio) -->
+    <!-- Dashboard -->
     <section
       class="card dashboard-card desktop-only hidden"
       id="dashboardSection"
@@ -176,10 +175,7 @@
     }
   </script>
 
-  <!-- Tesseract.js para OCR REAL -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-
-  <!-- Tu lógica principal -->
   <script type="module" src="app.js"></script>
 </body>
 </html>
