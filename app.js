@@ -1,6 +1,3 @@
-// app.js - Escáner de tarjetas con Firebase Auth + Firestore + Storage
-// Usa la API key guardada en localStorage (firebaseApiKey)
-
 import { getFirebaseConfig } from "./firebase-config.js";
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
@@ -28,25 +25,26 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 let app, db, storage, auth, provider;
-let currentUser = null;
-let cards = [];
-let currentImageDataUrl = null;
 
-// Inicializar Firebase leyendo la API key desde localStorage
+let currentUser = null;
+let currentImageDataUrl = null;
+let cards = [];
+
+// Inicializar
 try {
-  const firebaseConfig = getFirebaseConfig();
-  app = initializeApp(firebaseConfig);
+  const config = getFirebaseConfig();
+  app = initializeApp(config);
   db = getFirestore(app);
   storage = getStorage(app);
   auth = getAuth(app);
   provider = new GoogleAuthProvider();
-  console.log("✅ Firebase inicializado correctamente");
-} catch (error) {
-  console.error("Error al inicializar Firebase:", error);
+  console.log("Firebase cargado");
+} catch (err) {
+  console.error("Error Firebase:", err);
 }
 
+// Esperar DOM
 window.addEventListener("DOMContentLoaded", () => {
-  console.log("✅ DOM listo");
 
   const loginButton = document.getElementById("loginButton");
   const logoutButton = document.getElementById("logoutButton");
@@ -58,8 +56,10 @@ window.addEventListener("DOMContentLoaded", () => {
   const userAvatarImg = document.getElementById("userAvatar");
 
   const imageInput = document.getElementById("imageInput");
-  const imagePreviewContainer = document.getElementById("imagePreviewContainer");
   const imagePreview = document.getElementById("imagePreview");
+  const imagePreviewContainer = document.getElementById("imagePreviewContainer");
+
+  const rotateButton = document.getElementById("rotateButton");
   const scanButton = document.getElementById("scanButton");
   const ocrStatus = document.getElementById("ocrStatus");
 
@@ -73,134 +73,96 @@ window.addEventListener("DOMContentLoaded", () => {
 
   const cardsList = document.getElementById("cardsList");
 
-  // Si Firebase NO se pudo inicializar (no hay API key)
-  if (!app || !auth) {
-    if (authStatus) {
-      authStatus.textContent =
-        "Falta configurar la API key. Pulsa 'Configurar API Key de Firebase'.";
-    }
-    if (loginButton) loginButton.disabled = true;
-    if (logoutButton) logoutButton.disabled = true;
-    if (imageInput) imageInput.disabled = true;
-    if (scanButton) scanButton.disabled = true;
-    if (saveContactButton) saveContactButton.disabled = true;
-    return;
-  }
-
-  authStatus.textContent = "App cargada. Inicia sesión con Google.";
-
-  // Login con Google
-  loginButton.addEventListener("click", async () => {
-    authStatus.textContent = "Abriendo ventana de Google...";
-    console.log("🟢 Click en Iniciar sesión");
+  // --- LOGIN ---
+  loginButton.onclick = async () => {
     try {
+      authStatus.textContent = "Abriendo Google...";
       await signInWithPopup(auth, provider);
-    } catch (error) {
-      console.error("Error en signInWithPopup:", error);
-      authStatus.textContent =
-        "Error al iniciar sesión: " + (error.code || error.message);
+    } catch (err) {
+      authStatus.textContent = "Error login: " + err.code;
+      console.error(err);
     }
-  });
+  };
 
-  // Logout
-  logoutButton.addEventListener("click", async () => {
-    try {
-      await signOut(auth);
-    } catch (error) {
-      console.error(error);
-      authStatus.textContent = "Error al cerrar sesión.";
-    }
-  });
+  logoutButton.onclick = async () => {
+    await signOut(auth);
+  };
 
-  // Cambios de sesión
+  // --- CAMBIO DE USUARIO ---
   onAuthStateChanged(auth, async (user) => {
     currentUser = user;
 
     if (!user) {
-      console.log("👤 Usuario deslogueado");
       authUserInfo.hidden = true;
       authLoginArea.style.display = "block";
-      authStatus.textContent = "Inicia sesión con Google para usar la app.";
-      cards = [];
-      renderCardsList(cardsList);
-      toggleAppUI(false, { imageInput, scanButton, saveContactButton });
+      authStatus.textContent = "Inicia sesión con Google.";
+      cardsList.innerHTML = "";
+      disableApp();
       return;
     }
 
-    console.log("👤 Usuario autenticado:", user.uid);
-    authUserInfo.hidden = false;
     authLoginArea.style.display = "none";
+    authUserInfo.hidden = false;
 
-    userNameSpan.textContent = user.displayName || "Usuario";
-    userEmailSpan.textContent = user.email || "";
-    userAvatarImg.src =
-      user.photoURL ||
-      "https://ui-avatars.com/api/?name=" + encodeURIComponent(user.displayName || "U");
+    userNameSpan.textContent = user.displayName;
+    userEmailSpan.textContent = user.email;
+    userAvatarImg.src = user.photoURL;
 
-    authStatus.textContent = "Sesión iniciada correctamente.";
+    authStatus.textContent = "Sesión iniciada.";
 
-    toggleAppUI(true, { imageInput, scanButton, saveContactButton });
+    enableApp();
 
-    await loadCardsFromFirestore(user.uid);
-    renderCardsList(cardsList);
+    await loadCards(user.uid);
+    renderCards();
   });
 
-  // Subir imagen
-  imageInput.addEventListener("change", (e) => {
+  // --- SUBIR IMAGEN ---
+  imageInput.onchange = (e) => {
     const file = e.target.files[0];
-    if (!file) {
-      console.log("📷 No se ha seleccionado archivo");
-      return;
-    }
-
-    console.log("📷 Archivo seleccionado:", file.name, file.type, file.size, "bytes");
+    if (!file) return;
 
     const reader = new FileReader();
     reader.onload = (ev) => {
       currentImageDataUrl = ev.target.result;
-      console.log("📷 Imagen convertida a dataURL, longitud:", currentImageDataUrl.length);
-
       imagePreview.src = currentImageDataUrl;
       imagePreviewContainer.classList.remove("hidden");
+
       scanButton.disabled = false;
-      ocrStatus.textContent = "Imagen cargada. Pulsa en escanear para extraer datos.";
-    };
-    reader.onerror = (err) => {
-      console.error("❌ Error leyendo el archivo:", err);
-      ocrStatus.textContent = "Error leyendo la imagen del dispositivo.";
+      rotateButton.disabled = false;
     };
     reader.readAsDataURL(file);
-  });
+  };
 
-  // OCR falso
-  scanButton.addEventListener("click", async () => {
+  // --- ROTAR 90º ---
+  rotateButton.onclick = async () => {
+    if (!currentImageDataUrl) return;
+    currentImageDataUrl = await rotateDataUrl90(currentImageDataUrl);
+    imagePreview.src = currentImageDataUrl;
+  };
+
+  // --- OCR SIMULADO ---
+  scanButton.onclick = async () => {
     if (!currentImageDataUrl) {
-      ocrStatus.textContent = "Primero sube una imagen.";
+      ocrStatus.textContent = "Sube una imagen antes.";
       return;
     }
-    ocrStatus.textContent = "Procesando OCR...";
-    console.log("🔍 Lanzando OCR simulado...");
+
+    ocrStatus.textContent = "Procesando OCR (simulado)...";
 
     const text = await performFakeOCR();
-    console.log("🔍 Texto OCR simulado:", text);
-
     const parsed = parseBusinessCardText(text);
-    console.log("🔍 Datos parseados:", parsed);
 
     nameInput.value = parsed.name;
     companyInput.value = parsed.company;
     phoneInput.value = parsed.phone;
     emailInput.value = parsed.email;
 
-    ocrStatus.textContent = "OCR completado. Revisa los datos antes de guardar.";
-  });
+    ocrStatus.textContent = "OCR completado.";
+  };
 
-  // Guardar tarjeta
-  saveContactButton.addEventListener("click", async () => {
-    if (!currentUser) {
-      saveStatus.textContent = "Inicia sesión para guardar tarjetas.";
-      return;
-    }
+  // --- GUARDAR CONTACTO ---
+  saveContactButton.onclick = async () => {
+    if (!currentUser) return;
 
     const name = nameInput.value.trim();
     const company = companyInput.value.trim();
@@ -209,107 +171,128 @@ window.addEventListener("DOMContentLoaded", () => {
     const notes = notesInput.value.trim();
 
     if (!name && !phone && !email) {
-      saveStatus.textContent =
-        "Introduce al menos nombre, teléfono o email para guardar.";
+      saveStatus.textContent = "Rellena algún campo.";
       return;
     }
 
-    // Comprobar duplicado por email
-    saveStatus.textContent = "Comprobando si ya existe...";
-    try {
-      const duplicate = await isDuplicateCard(currentUser.uid, email);
-      if (duplicate) {
-        saveStatus.textContent =
-          "Ya existe una tarjeta con este email. No se ha duplicado.";
+    saveStatus.textContent = "Guardando...";
+
+    let imageUrl = null;
+
+    // 1. Subir imagen
+    if (currentImageDataUrl) {
+      try {
+        const id = Date.now();
+        const storagePath = `cards-images/${id}.jpg`;
+        const imageRef = ref(storage, storagePath);
+
+        await uploadString(imageRef, currentImageDataUrl, "data_url");
+        imageUrl = await getDownloadURL(imageRef);
+      } catch (err) {
+        saveStatus.textContent = "Error subiendo imagen";
+        console.error(err);
         return;
       }
-    } catch (error) {
-      console.error("Error comprobando duplicados:", error);
-      // seguimos igual, solo avisamos
     }
 
-    saveStatus.textContent = "Guardando tarjeta...";
-    let imageUrl = null;
-    let storagePath = null;
+    // 2. Guardar en Firestore
+    await addDoc(collection(db, "cards"), {
+      userId: currentUser.uid,
+      name,
+      company,
+      phone,
+      email,
+      notes,
+      imageUrl,
+      createdAt: serverTimestamp()
+    });
 
-    try {
-      // 1) Subir imagen a Storage (si hay)
-      if (currentImageDataUrl) {
-        const id = Date.now().toString();
-        storagePath = `cards-images/${id}.jpg`;
-        console.log("📤 Subiendo imagen a Storage en:", storagePath);
+    saveStatus.textContent = "Guardado correctamente.";
 
-        const imageRef = ref(storage, storagePath);
-        await uploadString(imageRef, currentImageDataUrl, "data_url");
+    await loadCards(currentUser.uid);
+    renderCards();
+  };
 
-        imageUrl = await getDownloadURL(imageRef);
-        console.log("✅ Imagen subida, URL:", imageUrl);
-      } else {
-        console.log("ℹ️ No hay imagen, se guarda tarjeta sin foto");
-      }
-    } catch (error) {
-      console.error("❌ Error subiendo imagen a Storage:", error);
-      saveStatus.textContent =
-        "Error subiendo la imagen: " + (error.code || error.message);
-      return; // no seguimos si la imagen falla
-    }
+  // --- FUNCIONES ---
+  async function loadCards(uid) {
+    cards = [];
+    const q = query(collection(db, "cards"), where("userId", "==", uid));
+    const snap = await getDocs(q);
+    snap.forEach((doc) => cards.push({ id: doc.id, ...doc.data() }));
+  }
 
-    try {
-      // 2) Guardar documento en Firestore
-      const newCard = {
-        userId: currentUser.uid,
-        name,
-        company,
-        phone,
-        email,
-        notes,
-        imageUrl,
-        storagePath,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      };
+  function renderCards() {
+    cardsList.innerHTML = "";
+    cards.forEach((card) => {
+      const div = document.createElement("div");
+      div.className = "saved-card";
 
-      const docRef = await addDoc(collection(db, "cards"), newCard);
-      console.log("✅ Tarjeta guardada con ID:", docRef.id);
+      div.innerHTML = `
+        <div class="saved-card-thumbnail">
+          ${card.imageUrl ? `<img src="${card.imageUrl}" />` : "T"}
+        </div>
+        <div class="saved-card-content">
+          <div class="saved-card-title">${card.name || "Sin nombre"}</div>
+          <div class="saved-card-subtitle">${card.company || ""}</div>
+          <div class="saved-card-meta">
+            ${card.phone || ""} ${card.email ? " · " + card.email : ""}
+          </div>
+        </div>
+      `;
 
-      cards.unshift({ id: docRef.id, ...newCard });
+      cardsList.appendChild(div);
+    });
+  }
 
-      saveStatus.textContent = "Tarjeta guardada correctamente.";
-      renderCardsList(cardsList);
-    } catch (error) {
-      console.error("❌ Error al guardar tarjeta en Firestore:", error);
-      saveStatus.textContent =
-        "Error al guardar la tarjeta (Firestore): " + (error.code || error.message);
-    }
-  });
+  function disableApp() {
+    imageInput.disabled = true;
+    scanButton.disabled = true;
+    rotateButton.disabled = true;
+    saveContactButton.disabled = true;
+  }
+
+  function enableApp() {
+    imageInput.disabled = false;
+  }
 });
 
-// ---------- Funciones auxiliares ----------
+// --- ROTAR IMAGEN ---
+function rotateDataUrl90(dataUrl) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
 
-// Comprobar si ya existe una tarjeta con el mismo email para este usuario
-async function isDuplicateCard(uid, email) {
-  if (!email) return false;
-  const qDup = query(
-    collection(db, "cards"),
-    where("userId", "==", uid),
-    where("email", "==", email)
-  );
+      canvas.width = img.height;
+      canvas.height = img.width;
 
-  const snap = await getDocs(qDup);
-  return !snap.empty;
+      ctx.translate(canvas.width / 2, canvas.height / 2);
+      ctx.rotate(Math.PI / 2);
+      ctx.drawImage(img, -img.width / 2, -img.height / 2);
+
+      resolve(canvas.toDataURL("image/jpeg", 0.9));
+    };
+    img.src = dataUrl;
+  });
 }
 
-// Cargar tarjetas del usuario
-async function loadCardsFromFirestore(uid) {
-  try:
-    console.log("📥 Cargando tarjetas para uid:", uid);
-    const qCards = query(collection(db, "cards"), where("userId", "==", uid));
-    const snap = await getDocs(qCards);
-    cards = [];
-    snap.forEach((docSnap) => {
-      const data = docSnap.data();
-      console.log("➡️ Tarjeta cargada:", docSnap.id, data);
-      cards.push({ id: docSnap.id, ...data });
-    });
-  } catch (error) {
-    console.error("❌ Error al carga
+// --- OCR FAKE ---
+async function performFakeOCR() {
+  await new Promise((r) => setTimeout(r, 800));
+  return `
+    Nombre Apellido
+    Empresa Ejemplo
+    Tel: +34 600 123 456
+    Email: ejemplo@empresa.com
+  `;
+}
+
+function parseBusinessCardText(text) {
+  return {
+    name: "Nombre Apellido",
+    company: "Empresa Ejemplo",
+    phone: "+34 600 123 456",
+    email: "ejemplo@empresa.com"
+  };
+}
