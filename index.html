@@ -21,7 +21,7 @@
 
     <div class="auth-bar">
       <div class="auth-user" id="authUserInfo" hidden>
-        <!-- Avatar eliminado, solo texto -->
+        <!-- Sin avatar, solo texto -->
         <div class="auth-text">
           <span id="userName"></span>
           <span id="userEmail"></span>
@@ -92,6 +92,23 @@
       </div>
 
       <div class="form-group">
+        <label for="regionInput">Zona / Región</label>
+        <input id="regionInput" type="text" placeholder="Madrid, Málaga, Valencia..." />
+      </div>
+
+      <div class="form-group">
+        <label for="categoryInput">Tipo de contacto</label>
+        <select id="categoryInput">
+          <option value="">Seleccionar...</option>
+          <option value="Promotor">Promotor</option>
+          <option value="Ingeniería">Ingeniería</option>
+          <option value="Arquitecto">Arquitecto</option>
+          <option value="Integrator Partner">Integrator Partner</option>
+          <option value="Otro">Otro</option>
+        </select>
+      </div>
+
+      <div class="form-group">
         <label for="notesInput">Notas</label>
         <textarea id="notesInput" rows="3"></textarea>
       </div>
@@ -100,10 +117,27 @@
       <p id="saveStatus" class="status-text"></p>
     </section>
 
-    <!-- Listado -->
+    <!-- Listado + botón Dashboard (solo escritorio) -->
     <section class="card list-card">
-      <h2>Tarjetas guardadas</h2>
+      <div class="list-header">
+        <h2>Tarjetas guardadas</h2>
+        <button
+          id="dashboardToggleButton"
+          class="btn small-btn secondary-btn desktop-only"
+        >
+          Ver dashboard
+        </button>
+      </div>
       <div id="cardsList" class="cards-list"></div>
+    </section>
+
+    <!-- Dashboard (solo escritorio) -->
+    <section
+      class="card dashboard-card desktop-only hidden"
+      id="dashboardSection"
+    >
+      <h2>Dashboard de contactos</h2>
+      <div id="dashboardContent" class="dashboard-content"></div>
     </section>
 
   </main>
