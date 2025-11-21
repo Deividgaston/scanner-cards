@@ -69,6 +69,7 @@ window.addEventListener("DOMContentLoaded", () => {
 
   const nameInput = document.getElementById("nameInput");
   const companyInput = document.getElementById("companyInput");
+  const positionInput = document.getElementById("positionInput");
   const phoneInput = document.getElementById("phoneInput");
   const emailInput = document.getElementById("emailInput");
   const regionInput = document.getElementById("regionInput");
@@ -206,6 +207,7 @@ window.addEventListener("DOMContentLoaded", () => {
 
     const name = nameInput.value.trim();
     const company = companyInput.value.trim();
+    const position = positionInput.value.trim();
     const phone = phoneInput.value.trim();
     const email = emailInput.value.trim();
     const region = regionInput.value.trim();
@@ -242,6 +244,7 @@ window.addEventListener("DOMContentLoaded", () => {
         userId: currentUser.uid,
         name,
         company,
+        position,
         phone,
         email,
         region,
@@ -259,6 +262,7 @@ window.addEventListener("DOMContentLoaded", () => {
         userId: currentUser.uid,
         name,
         company,
+        position,
         phone,
         email,
         region,
@@ -369,6 +373,7 @@ function renderCards(container) {
 
     const regionText = card.region ? ` · ${card.region}` : "";
     const catText = card.category ? ` · ${card.category}` : "";
+    const posText = card.position ? ` · ${card.position}` : "";
 
     div.innerHTML = `
       <div class="saved-card-thumbnail">
@@ -376,7 +381,9 @@ function renderCards(container) {
       </div>
       <div class="saved-card-content">
         <div class="saved-card-title">${card.name || "Sin nombre"}</div>
-        <div class="saved-card-subtitle">${card.company || ""}</div>
+        <div class="saved-card-subtitle">
+          ${card.company || ""}${posText}
+        </div>
         <div class="saved-card-meta">
           ${card.phone || ""} ${card.email ? " · " + card.email : ""}${regionText}${catText}
         </div>
