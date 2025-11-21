@@ -163,10 +163,18 @@ window.addEventListener("DOMContentLoaded", () => {
 
   // OCR falso
   scanButton.addEventListener("click", async () => {
-    if (!currentImageDataUrl) return;
+    if (!currentImageDataUrl) {
+      ocrStatus.textContent = "Primero sube una imagen.";
+      return;
+    }
     ocrStatus.textContent = "Procesando OCR...";
+    console.log("🔍 Lanzando OCR simulado...");
+
     const text = await performFakeOCR();
+    console.log("🔍 Texto OCR simulado:", text);
+
     const parsed = parseBusinessCardText(text);
+    console.log("🔍 Datos parseados:", parsed);
 
     nameInput.value = parsed.name;
     companyInput.value = parsed.company;
@@ -195,19 +203,38 @@ window.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
+    saveStatus.textContent = "Comprobando si ya existe...";
+    try {
+      const duplicate = await isDuplicateCard(currentUser.uid, email);
+      if (duplicate) {
+        saveStatus.textContent =
+          "Ya existe una tarjeta con este email. No se ha duplicado.";
+        return;
+      }
+    } catch (error) {
+      console.error("Error comprobando duplicados:", error);
+      // seguimos igualmente para no bloquear al usuario
+    }
+
     saveStatus.textContent = "Guardando tarjeta...";
     let imageUrl = null;
     let storagePath = null;
 
     try {
+      // 1) Subir imagen a Storage (si hay)
       if (currentImageDataUrl) {
         const id = Date.now().toString();
         storagePath = `cards-images/${id}.jpg`;
+        console.log("📤 Subiendo imagen a Storage en:", storagePath);
+
         const imageRef = ref(storage, storagePath);
         await uploadString(imageRef, currentImageDataUrl, "data_url");
+
         imageUrl = await getDownloadURL(imageRef);
+        console.log("✅ Imagen subida, URL:", imageUrl);
       }
 
+      // 2) Guardar documento en Firestore
       const newCard = {
         userId: currentUser.uid,
         name,
@@ -222,32 +249,52 @@ window.addEventListener("DOMContentLoaded", () => {
       };
 
       const docRef = await addDoc(collection(db, "cards"), newCard);
+      console.log("✅ Tarjeta guardada con ID:", docRef.id);
+
       cards.unshift({ id: docRef.id, ...newCard });
 
       saveStatus.textContent = "Tarjeta guardada correctamente.";
       renderCardsList(cardsList);
     } catch (error) {
-      console.error(error);
-      saveStatus.textContent = "Error al guardar la tarjeta.";
+      console.error("❌ Error al guardar tarjeta o subir imagen:", error);
+      saveStatus.textContent = "Error al guardar la tarjeta (revisa consola).";
     }
   });
 });
 
 // ---------- Funciones auxiliares ----------
 
+// Comprobar si ya existe una tarjeta con el mismo email para este usuario
+async function isDuplicateCard(uid, email) {
+  if (!email) return false;
+  const q = query(
+    collection(db, "cards"),
+    where("userId", "==", uid),
+    where("email", "==", email)
+  );
+
+  const snap = await getDocs(q);
+  return !snap.empty;
+}
+
+// Cargar tarjetas del usuario
 async function loadCardsFromFirestore(uid) {
   try {
-    const q = query(collection(getFirestore(), "cards"), where("userId", "==", uid));
+    console.log("📥 Cargando tarjetas para uid:", uid);
+    const q = query(collection(db, "cards"), where("userId", "==", uid));
     const snap = await getDocs(q);
     cards = [];
     snap.forEach((docSnap) => {
-      cards.push({ id: docSnap.id, ...docSnap.data() });
+      const data = docSnap.data();
+      console.log("➡️ Tarjeta cargada:", docSnap.id, data);
+      cards.push({ id: docSnap.id, ...data });
     });
   } catch (error) {
-    console.error("Error al cargar tarjetas:", error);
+    console.error("❌ Error al cargar tarjetas desde Firestore:", error);
   }
 }
 
+// Render listado
 function renderCardsList(container) {
   if (!container) return;
 
