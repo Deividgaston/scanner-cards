@@ -12,17 +12,16 @@
     <h1>Tarjetas de Visita</h1>
     <p>Escanea tarjetas, guarda contactos y gestiona tu red de forma sencilla.</p>
 
-    <!-- Botón para configurar la API key en este navegador -->
+    <!-- Botón para configurar la API key -->
     <div style="margin-top:0.75rem;">
       <button class="btn primary-btn" onclick="configurarApiKey()">
         Configurar API Key de Firebase
       </button>
     </div>
 
-    <!-- Barra de autenticación -->
     <div class="auth-bar">
       <div class="auth-user" id="authUserInfo" hidden>
-        <img id="userAvatar" class="auth-avatar" alt="Avatar" />
+        <img id="userAvatar" class="auth-avatar" alt="avatar" />
         <div class="auth-text">
           <span id="userName"></span>
           <span id="userEmail"></span>
@@ -43,7 +42,8 @@
   </header>
 
   <main class="container">
-    <!-- Captura / subida de imagen -->
+
+    <!-- Subida de imagen -->
     <section class="card capture-card">
       <h2>Nueva tarjeta</h2>
 
@@ -56,6 +56,10 @@
         <img id="imagePreview" alt="Previsualización tarjeta" />
       </div>
 
+      <button id="rotateButton" class="btn secondary-btn" disabled>
+        ↪️ Rotar 90º
+      </button>
+
       <button id="scanButton" class="btn secondary-btn" disabled>
         🔍 Escanear tarjeta (OCR)
       </button>
@@ -63,7 +67,7 @@
       <p id="ocrStatus" class="status-text"></p>
     </section>
 
-    <!-- Datos del contacto -->
+    <!-- Formulario -->
     <section class="card form-card">
       <h2>Datos del contacto</h2>
 
@@ -89,41 +93,34 @@
 
       <div class="form-group">
         <label for="notesInput">Notas</label>
-        <textarea id="notesInput" rows="3" placeholder="Notas adicionales (reunión, proyecto, etc.)"></textarea>
+        <textarea id="notesInput" rows="3"></textarea>
       </div>
 
-      <button id="saveContactButton" class="btn primary-btn">
-        💾 Guardar tarjeta
-      </button>
-
+      <button id="saveContactButton" class="btn primary-btn">Guardar tarjeta</button>
       <p id="saveStatus" class="status-text"></p>
     </section>
 
-    <!-- Listado de tarjetas -->
+    <!-- Listado -->
     <section class="card list-card">
       <h2>Tarjetas guardadas</h2>
       <div id="cardsList" class="cards-list"></div>
     </section>
+
   </main>
 
   <footer class="app-footer">
-    <small>App tarjetas de visita · Versión 1.0</small>
+    <small>App tarjetas de visita · v1.0</small>
   </footer>
 
-  <!-- Script para guardar la API key solo en este navegador -->
   <script>
     function configurarApiKey() {
       const actual = localStorage.getItem("firebaseApiKey") || "";
-      const key = window.prompt("Introduce tu API key de Firebase:", actual);
-
-      if (!key) {
-        alert("No se ha guardado ninguna API key.");
-        return;
+      const key = prompt("Introduce tu API key de Firebase:", actual);
+      if (key) {
+        localStorage.setItem("firebaseApiKey", key.trim());
+        alert("API key guardada. Recarga la página.");
+        location.reload();
       }
-
-      localStorage.setItem("firebaseApiKey", key.trim());
-      alert("API key guardada en este navegador. Recarga la página para aplicarla.");
-      location.reload();
     }
   </script>
 
