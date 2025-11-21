@@ -319,11 +319,14 @@ window.addEventListener("DOMContentLoaded", () => {
   // --- TOGGLE DASHBOARD (solo escritorio) ---
   if (dashboardToggleButton) {
     dashboardToggleButton.onclick = () => {
+      console.log("📊 Click en botón dashboard");
       dashboardVisible = !dashboardVisible;
       if (dashboardVisible) {
         dashboardSection.classList.remove("hidden");
         dashboardToggleButton.textContent = "Ocultar dashboard";
         buildDashboard(dashboardContent);
+        // Hacer scroll suave hasta el dashboard
+        dashboardSection.scrollIntoView({ behavior: "smooth", block: "start" });
       } else {
         dashboardSection.classList.add("hidden");
         dashboardToggleButton.textContent = "Ver dashboard";
@@ -397,8 +400,20 @@ function renderCards(container) {
   });
 }
 
-// Construir dashboard simple por tipo y región
+// Construir dashboard con análisis
 function buildDashboard(container) {
+  console.log("📊 Construyendo dashboard con", cards.length, "tarjetas");
+
+  if (!cards.length) {
+    container.innerHTML = `
+      <div class="dashboard-block">
+        <h3>Sin datos</h3>
+        <p>Todavía no hay tarjetas guardadas. Escanea algunas para ver el análisis.</p>
+      </div>
+    `;
+    return;
+  }
+
   const total = cards.length;
 
   const byCategory = {};
@@ -412,13 +427,47 @@ function buildDashboard(container) {
     byRegion[reg] = (byRegion[reg] || 0) + 1;
   });
 
+  // Encontrar la categoría principal
+  let topCategory = null;
+  let topCategoryCount = 0;
+  for (const [cat, count] of Object.entries(byCategory)) {
+    if (count > topCategoryCount) {
+      topCategory = cat;
+      topCategoryCount = count;
+    }
+  }
+
+  // Encontrar la región principal
+  let topRegion = null;
+  let topRegionCount = 0;
+  for (const [reg, count] of Object.entries(byRegion)) {
+    if (count > topRegionCount) {
+      topRegion = reg;
+      topRegionCount = count;
+    }
+  }
+
   let html = "";
 
+  // Bloque resumen general + análisis
   html += `<div class="dashboard-block">
     <h3>Resumen general</h3>
     <p>Total tarjetas: <strong>${total}</strong></p>
+    <p style="margin-top:0.4rem;font-size:0.8rem;color:#9ca3af;">
+      ${
+        topCategory
+          ? `Tu vertical más frecuente es <strong>${topCategory}</strong> con <strong>${topCategoryCount}</strong> contactos.`
+          : ""
+      }
+      ${
+        topRegion
+          ? `<br/>La zona donde más tarjetas tienes es <strong>${topRegion}</strong> con <strong>${topRegionCount}</strong> contactos.`
+          : ""
+      }
+    </p>
   </div>`;
 
+  // Bloque por tipo de contacto
   html += `<div class="dashboard-block">
     <h3>Por tipo de contacto</h3>
     <ul class="dashboard-list">
@@ -428,6 +477,7 @@ function buildDashboard(container) {
     </ul>
   </div>`;
 
+  // Bloque por zona / región
   html += `<div class="dashboard-block">
     <h3>Por zona / región</h3>
     <ul class="dashboard-list">
