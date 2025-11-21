@@ -72,6 +72,7 @@ window.addEventListener("DOMContentLoaded", () => {
   const positionInput = document.getElementById("positionInput");
   const phoneInput = document.getElementById("phoneInput");
   const emailInput = document.getElementById("emailInput");
+  const websiteInput = document.getElementById("websiteInput");
   const regionInput = document.getElementById("regionInput");
   const categoryInput = document.getElementById("categoryInput");
   const notesInput = document.getElementById("notesInput");
@@ -194,6 +195,7 @@ window.addEventListener("DOMContentLoaded", () => {
       if (parsed.company) companyInput.value = parsed.company;
       if (parsed.phone) phoneInput.value = parsed.phone;
       if (parsed.email) emailInput.value = parsed.email;
+      // Website no lo intentamos sacar del OCR (normalmente lo apuntas tú si te interesa)
     } catch (err) {
       console.error("❌ Error OCR:", err);
       ocrStatus.textContent =
@@ -210,6 +212,7 @@ window.addEventListener("DOMContentLoaded", () => {
     const position = positionInput.value.trim();
     const phone = phoneInput.value.trim();
     const email = emailInput.value.trim();
+    const website = websiteInput.value.trim();
     const region = regionInput.value.trim();
     const category = categoryInput.value;
     const notes = notesInput.value.trim();
@@ -247,6 +250,7 @@ window.addEventListener("DOMContentLoaded", () => {
         position,
         phone,
         email,
+        website,
         region,
         category,
         notes,
@@ -265,6 +269,7 @@ window.addEventListener("DOMContentLoaded", () => {
         position,
         phone,
         email,
+        website,
         region,
         category,
         notes,
@@ -325,7 +330,6 @@ window.addEventListener("DOMContentLoaded", () => {
         dashboardSection.classList.remove("hidden");
         dashboardToggleButton.textContent = "Ocultar dashboard";
         buildDashboard(dashboardContent);
-        // Hacer scroll suave hasta el dashboard
         dashboardSection.scrollIntoView({ behavior: "smooth", block: "start" });
       } else {
         dashboardSection.classList.add("hidden");
@@ -377,6 +381,7 @@ function renderCards(container) {
     const regionText = card.region ? ` · ${card.region}` : "";
     const catText = card.category ? ` · ${card.category}` : "";
     const posText = card.position ? ` · ${card.position}` : "";
+    const webText = card.website ? ` · ${card.website}` : "";
 
     div.innerHTML = `
       <div class="saved-card-thumbnail">
@@ -388,7 +393,7 @@ function renderCards(container) {
           ${card.company || ""}${posText}
         </div>
         <div class="saved-card-meta">
-          ${card.phone || ""} ${card.email ? " · " + card.email : ""}${regionText}${catText}
+          ${card.phone || ""} ${card.email ? " · " + card.email : ""}${regionText}${catText}${webText}
         </div>
       </div>
       <div class="saved-card-actions">
@@ -400,7 +405,7 @@ function renderCards(container) {
   });
 }
 
-// Construir dashboard con análisis
+// Construir dashboard con análisis (incluyendo agrupación por empresa)
 function buildDashboard(container) {
   console.log("📊 Construyendo dashboard con", cards.length, "tarjetas");
 
@@ -418,16 +423,19 @@ function buildDashboard(container) {
 
   const byCategory = {};
   const byRegion = {};
+  const byCompany = {};
 
   cards.forEach((card) => {
     const cat = card.category || "Sin categoría";
     const reg = card.region || "Sin región";
+    const comp = card.company || "Sin empresa";
 
     byCategory[cat] = (byCategory[cat] || 0) + 1;
     byRegion[reg] = (byRegion[reg] || 0) + 1;
+    byCompany[comp] = (byCompany[comp] || 0) + 1;
   });
 
-  // Encontrar la categoría principal
+  // Vertical principal
   let topCategory = null;
   let topCategoryCount = 0;
   for (const [cat, count] of Object.entries(byCategory)) {
@@ -437,13 +445,23 @@ function buildDashboard(container) {
     }
   }
 
-  // Encontrar la región principal
+  // Región principal
   let topRegion = null;
   let topRegionCount = 0;
   for (const [reg, count] of Object.entries(byRegion)) {
     if (count > topRegionCount) {
       topRegion = reg;
       topRegionCount = count;
+    }
+  }
+
+  // Empresa con más contactos
+  let topCompany = null;
+  let topCompanyCount = 0;
+  for (const [comp, count] of Object.entries(byCompany)) {
+    if (count > topCompanyCount) {
+      topCompany = comp;
+      topCompanyCount = count;
     }
   }
 
@@ -462,6 +480,11 @@ function buildDashboard(container) {
       ${
         topRegion
           ? `<br/>La zona donde más tarjetas tienes es <strong>${topRegion}</strong> con <strong>${topRegionCount}</strong> contactos.`
+          : ""
+      }
+      ${
+        topCompany
+          ? `<br/>La empresa donde más contactos tienes es <strong>${topCompany}</strong> con <strong>${topCompanyCount}</strong> personas distintas.`
           : ""
       }
     </p>
@@ -483,6 +506,16 @@ function buildDashboard(container) {
     <ul class="dashboard-list">
       ${Object.entries(byRegion)
         .map(([reg, count]) => `<li>${reg}: <strong>${count}</strong></li>`)
+        .join("")}
+    </ul>
+  </div>`;
+
+  // Bloque por empresa
+  html += `<div class="dashboard-block">
+    <h3>Por empresa (nº de contactos)</h3>
+    <ul class="dashboard-list">
+      ${Object.entries(byCompany)
+        .map(([comp, count]) => `<li>${comp}: <strong>${count}</strong></li>`)
         .join("")}
     </ul>
   </div>`;
