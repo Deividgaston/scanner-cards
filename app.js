@@ -148,15 +148,26 @@ window.addEventListener("DOMContentLoaded", () => {
   // Subir imagen
   imageInput.addEventListener("change", (e) => {
     const file = e.target.files[0];
-    if (!file) return;
+    if (!file) {
+      console.log("📷 No se ha seleccionado archivo");
+      return;
+    }
+
+    console.log("📷 Archivo seleccionado:", file.name, file.type, file.size, "bytes");
 
     const reader = new FileReader();
     reader.onload = (ev) => {
       currentImageDataUrl = ev.target.result;
+      console.log("📷 Imagen convertida a dataURL, longitud:", currentImageDataUrl.length);
+
       imagePreview.src = currentImageDataUrl;
       imagePreviewContainer.classList.remove("hidden");
       scanButton.disabled = false;
       ocrStatus.textContent = "Imagen cargada. Pulsa en escanear para extraer datos.";
+    };
+    reader.onerror = (err) => {
+      console.error("❌ Error leyendo el archivo:", err);
+      ocrStatus.textContent = "Error leyendo la imagen del dispositivo.";
     };
     reader.readAsDataURL(file);
   });
@@ -203,6 +214,7 @@ window.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
+    // Comprobar duplicado por email
     saveStatus.textContent = "Comprobando si ya existe...";
     try {
       const duplicate = await isDuplicateCard(currentUser.uid, email);
@@ -213,7 +225,7 @@ window.addEventListener("DOMContentLoaded", () => {
       }
     } catch (error) {
       console.error("Error comprobando duplicados:", error);
-      // seguimos igualmente para no bloquear al usuario
+      // seguimos igual, solo avisamos
     }
 
     saveStatus.textContent = "Guardando tarjeta...";
@@ -232,8 +244,17 @@ window.addEventListener("DOMContentLoaded", () => {
 
         imageUrl = await getDownloadURL(imageRef);
         console.log("✅ Imagen subida, URL:", imageUrl);
+      } else {
+        console.log("ℹ️ No hay imagen, se guarda tarjeta sin foto");
       }
+    } catch (error) {
+      console.error("❌ Error subiendo imagen a Storage:", error);
+      saveStatus.textContent =
+        "Error subiendo la imagen: " + (error.code || error.message);
+      return; // no seguimos si la imagen falla
+    }
 
+    try {
       // 2) Guardar documento en Firestore
       const newCard = {
         userId: currentUser.uid,
@@ -256,8 +277,9 @@ window.addEventListener("DOMContentLoaded", () => {
       saveStatus.textContent = "Tarjeta guardada correctamente.";
       renderCardsList(cardsList);
     } catch (error) {
-      console.error("❌ Error al guardar tarjeta o subir imagen:", error);
-      saveStatus.textContent = "Error al guardar la tarjeta (revisa consola).";
+      console.error("❌ Error al guardar tarjeta en Firestore:", error);
+      saveStatus.textContent =
+        "Error al guardar la tarjeta (Firestore): " + (error.code || error.message);
     }
   });
 });
@@ -267,22 +289,22 @@ window.addEventListener("DOMContentLoaded", () => {
 // Comprobar si ya existe una tarjeta con el mismo email para este usuario
 async function isDuplicateCard(uid, email) {
   if (!email) return false;
-  const q = query(
+  const qDup = query(
     collection(db, "cards"),
     where("userId", "==", uid),
     where("email", "==", email)
   );
 
-  const snap = await getDocs(q);
+  const snap = await getDocs(qDup);
   return !snap.empty;
 }
 
 // Cargar tarjetas del usuario
 async function loadCardsFromFirestore(uid) {
-  try {
+  try:
     console.log("📥 Cargando tarjetas para uid:", uid);
-    const q = query(collection(db, "cards"), where("userId", "==", uid));
-    const snap = await getDocs(q);
+    const qCards = query(collection(db, "cards"), where("userId", "==", uid));
+    const snap = await getDocs(qCards);
     cards = [];
     snap.forEach((docSnap) => {
       const data = docSnap.data();
@@ -290,91 +312,4 @@ async function loadCardsFromFirestore(uid) {
       cards.push({ id: docSnap.id, ...data });
     });
   } catch (error) {
-    console.error("❌ Error al cargar tarjetas desde Firestore:", error);
-  }
-}
-
-// Render listado
-function renderCardsList(container) {
-  if (!container) return;
-
-  if (!currentUser) {
-    container.innerHTML =
-      "<p style='font-size:0.85rem;color:#9ca3af;'>Inicia sesión para ver tus tarjetas.</p>";
-    return;
-  }
-
-  if (!cards.length) {
-    container.innerHTML =
-      "<p style='font-size:0.85rem;color:#9ca3af;'>No hay tarjetas guardadas todavía.</p>";
-    return;
-  }
-
-  container.innerHTML = "";
-  cards.forEach((card) => {
-    const div = document.createElement("div");
-    div.className = "saved-card";
-
-    const thumb = card.imageUrl
-      ? `<img src="${card.imageUrl}" alt="Tarjeta" />`
-      : "T";
-
-    div.innerHTML = `
-      <div class="saved-card-thumbnail">${thumb}</div>
-      <div class="saved-card-content">
-        <div class="saved-card-title">${card.name || "Sin nombre"}</div>
-        <div class="saved-card-subtitle">${card.company || ""}</div>
-        <div class="saved-card-meta">
-          ${card.phone ? "📞 " + card.phone : ""}
-          ${card.email ? " · ✉️ " + card.email : ""}
-        </div>
-      </div>
-    `;
-
-    container.appendChild(div);
-  });
-}
-
-function toggleAppUI(enabled, { imageInput, scanButton, saveContactButton }) {
-  imageInput.disabled = !enabled;
-  scanButton.disabled = !enabled || !currentImageDataUrl;
-  saveContactButton.disabled = !enabled;
-}
-
-// Simulación de OCR para pruebas
-async function performFakeOCR() {
-  await new Promise((r) => setTimeout(r, 800));
-  return `
-    Nombre Apellido
-    Empresa Ejemplo
-    Tel: +34 600 123 456
-    Email: ejemplo@empresa.com
-  `;
-}
-
-function parseBusinessCardText(text) {
-  const result = { name: "", company: "", phone: "", email: "" };
-  if (!text) return result;
-
-  const lines = text
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter(Boolean);
-
-  const emailRegex = /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[A-Za-z]{2,})/;
-  const phoneRegex = /(\+?\d[\d\s\-]{7,}\d)/;
-
-  for (const line of lines) {
-    if (!result.email && emailRegex.test(line)) {
-      result.email = line.match(emailRegex)[1];
-    }
-    if (!result.phone && phoneRegex.test(line)) {
-      result.phone = line.match(phoneRegex)[1];
-    }
-  }
-
-  result.name = lines[0] || "";
-  result.company = lines[1] || "";
-
-  return result;
-}
+    console.error("❌ Error al carga
