@@ -64,14 +64,6 @@ body {
   gap: 0.5rem;
 }
 
-.auth-avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 999px;
-  object-fit: cover;
-  border: 1px solid #1f2937;
-}
-
 .auth-text {
   display: flex;
   flex-direction: column;
@@ -124,8 +116,13 @@ body {
 }
 
 .small-btn {
-  font-size: 0.7rem;
-  padding: 0.35rem 0.6rem;
+  font-size: 0.75rem;
+  padding: 0.35rem 0.7rem;
+}
+
+/* Desktop-only utility */
+.desktop-only {
+  display: none;
 }
 
 /* Image preview */
@@ -160,7 +157,8 @@ body {
 }
 
 .form-group input,
-.form-group textarea {
+.form-group textarea,
+.form-group select {
   width: 100%;
   padding: 0.5rem 0.7rem;
   border-radius: 0.5rem;
@@ -171,7 +169,8 @@ body {
 }
 
 .form-group input:focus,
-.form-group textarea:focus {
+.form-group textarea:focus,
+.form-group select:focus {
   outline: none;
   border-color: #22c55e;
 }
@@ -197,6 +196,7 @@ body {
   border-radius: 0.75rem;
   background: #020617;
   border: 1px solid #111827;
+  align-items: center;
 }
 
 .saved-card-thumbnail {
@@ -241,6 +241,52 @@ body {
   margin-top: 0.1rem;
 }
 
+.saved-card-actions {
+  display: flex;
+  align-items: center;
+  margin-left: 0.5rem;
+}
+
+/* List header (título + botón dashboard) */
+.list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+/* Dashboard */
+.dashboard-content {
+  font-size: 0.85rem;
+  color: #e5e7eb;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.dashboard-block {
+  background: #020617;
+  border-radius: 0.75rem;
+  border: 1px solid #111827;
+  padding: 0.6rem 0.75rem;
+}
+
+.dashboard-block h3 {
+  font-size: 0.85rem;
+  margin-bottom: 0.35rem;
+}
+
+.dashboard-list {
+  list-style: none;
+  padding-left: 0;
+}
+
+.dashboard-list li {
+  font-size: 0.8rem;
+  color: #9ca3af;
+}
+
 /* Footer */
 .app-footer {
   text-align: center;
@@ -254,10 +300,11 @@ body {
   .container {
     display: grid;
     grid-template-columns: 1.1fr 1.1fr;
-    grid-template-rows: auto auto;
+    grid-template-rows: auto auto auto;
     grid-template-areas:
       "capture form"
-      "list list";
+      "list list"
+      "dashboard dashboard";
   }
 
   .capture-card {
@@ -268,5 +315,38 @@ body {
   }
   .list-card {
     grid-area: list;
+  }
+  .dashboard-card {
+    grid-area: dashboard;
+  }
+
+  /* Mostrar elementos solo escritorio */
+  .desktop-only {
+    display: inline-flex;
+  }
+}
+
+/* BOTONES GRANDES EN MÓVIL */
+@media (max-width: 767px) {
+  .btn {
+    width: 100%;
+    justify-content: center;
+    font-size: 1rem;
+    padding: 0.9rem 1.2rem;
+  }
+
+  .small-btn {
+    width: auto;
+    font-size: 0.8rem;
+    padding: 0.35rem 0.7rem;
+  }
+
+  .list-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .desktop-only {
+    display: none !important;
   }
 }
