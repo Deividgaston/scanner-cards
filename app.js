@@ -193,9 +193,10 @@ window.addEventListener("DOMContentLoaded", () => {
 
       if (parsed.name) nameInput.value = parsed.name;
       if (parsed.company) companyInput.value = parsed.company;
+      if (parsed.position) positionInput.value = parsed.position;
       if (parsed.phone) phoneInput.value = parsed.phone;
       if (parsed.email) emailInput.value = parsed.email;
-      // Website no lo intentamos sacar del OCR (normalmente lo apuntas tú si te interesa)
+      if (parsed.website) websiteInput.value = parsed.website;
     } catch (err) {
       console.error("❌ Error OCR:", err);
       ocrStatus.textContent =
@@ -558,40 +559,184 @@ async function performRealOCR(dataUrl) {
   return data.text || "";
 }
 
-// Parsear texto de tarjeta
+// Parser mejorado de texto de tarjeta
 function parseBusinessCardText(text) {
-  const result = { name: "", company: "", phone: "", email: "" };
+  const result = {
+    name: "",
+    company: "",
+    position: "",
+    phone: "",
+    email: "",
+    website: "",
+  };
   if (!text) return result;
 
-  const lines = text
+  let lines = text
     .split(/\r?\n/)
     .map((l) => l.trim())
     .filter(Boolean);
 
-  const emailRegex = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
-  const phoneRegex = /(\+?\d[\d\s().-]{7,}\d)/;
+  // Normalizamos espacios
+  lines = lines.map((l) => l.replace(/\s+/g, " "));
 
+  const emailRegex = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
+  const phoneRegex = /(\+?\d[\d\s().\-]{7,}\d)/;
+  const urlRegex =
+    /\b(https?:\/\/)?([a-z0-9\-]+\.)+[a-z]{2,}(\/[^\s]*)?/i;
+
+  const positionKeywords = [
+    "director",
+    "manager",
+    "responsable",
+    "sales",
+    "comercial",
+    "ceo",
+    "cto",
+    "cmo",
+    "coo",
+    "founder",
+    "socio",
+    "owner",
+    "arquitecto",
+    "architect",
+    "ingeniero",
+    "engineer",
+    "project manager",
+    "jefe de obra",
+    "business development",
+    "consultor",
+    "consultant",
+  ];
+
+  const isUpper = (s) =>
+    s.length > 0 &&
+    s === s.toUpperCase() &&
+    /[A-ZÁÉÍÓÚÑ]/.test(s);
+
+  // 1) EMAIL, TELÉFONO, WEB
   for (const line of lines) {
     if (!result.email && emailRegex.test(line)) {
       result.email = line.match(emailRegex)[0];
     }
     if (!result.phone && phoneRegex.test(line)) {
-      result.phone = line.match(phoneRegex)[1];
+      result.phone = line.match(phoneRegex)[1].trim();
+    }
+    if (!result.website && urlRegex.test(line)) {
+      let w = line.match(urlRegex)[0].trim();
+      // Añadimos https si no viene
+      if (!/^https?:\/\//i.test(w)) {
+        w = "https://" + w;
+      }
+      result.website = w;
     }
   }
 
-  // Nombre: primera línea que no sea email ni teléfono
-  result.name =
-    lines.find(
-      (l) => l && !emailRegex.test(l) && !phoneRegex.test(l) && l.length < 40
-    ) || "";
+  // 2) CARGO (posición)
+  for (const line of lines) {
+    const lower = line.toLowerCase();
+    if (
+      positionKeywords.some((kw) => lower.includes(kw)) &&
+      !emailRegex.test(line) &&
+      !phoneRegex.test(line) &&
+      !urlRegex.test(line)
+    ) {
+      result.position = line;
+      break;
+    }
+  }
 
-  // Empresa: línea siguiente a la del nombre (si no es email/teléfono)
-  const nameIndex = lines.indexOf(result.name);
-  if (nameIndex >= 0 && nameIndex + 1 < lines.length) {
-    const maybeCompany = lines[nameIndex + 1];
-    if (!emailRegex.test(maybeCompany) && !phoneRegex.test(maybeCompany)) {
-      result.company = maybeCompany;
+  // 3) Posible empresa: líneas con S.L., S.A., GROUP, ARQUITECTOS, INGENIERÍA…
+  const companyIndicators = [
+    "s.l",
+    "s.a",
+    "sl",
+    "sa",
+    "group",
+    "grupo",
+    "arquitect",
+    "ingenier",
+    "construcciones",
+    "promociones",
+    "developers",
+    "properties",
+  ];
+
+  let candidateCompanies = lines.filter((line) => {
+    const lower = line.toLowerCase();
+    return (
+      !emailRegex.test(line) &&
+      !phoneRegex.test(line) &&
+      !urlRegex.test(line) &&
+      companyIndicators.some((kw) => lower.includes(kw))
+    );
+  });
+
+  if (candidateCompanies.length > 0) {
+    // Si hay varias, cogemos la más larga
+    candidateCompanies.sort((a, b) => b.length - a.length);
+    result.company = candidateCompanies[0];
+  }
+
+  // 4) Si no hemos encontrado empresa, buscamos línea en mayúsculas que no sea email/tel/web
+  if (!result.company) {
+    const upperLines = lines.filter(
+      (l) =>
+        isUpper(l) &&
+        !emailRegex.test(l) &&
+        !phoneRegex.test(l) &&
+        !urlRegex.test(l)
+    );
+    if (upperLines.length > 0) {
+      // La más larga suele ser la empresa
+      upperLines.sort((a, b) => b.length - a.length);
+      result.company = upperLines[0];
+    }
+  }
+
+  // 5) Nombre: línea que no sea email/tel/web, no tenga keywords de empresa,
+  // no esté toda en mayúsculas y tenga 2–4 palabras con mayúsculas iniciales.
+  const looksLikeName = (line) => {
+    if (!line) return false;
+    if (emailRegex.test(line) || phoneRegex.test(line) || urlRegex.test(line))
+      return false;
+    if (isUpper(line)) return false;
+
+    const tokens = line.split(" ");
+    if (tokens.length < 2 || tokens.length > 4) return false;
+
+    let capitalizedWords = 0;
+    for (const t of tokens) {
+      if (/^[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+$/.test(t)) {
+        capitalizedWords++;
+      }
+    }
+    return capitalizedWords >= 2;
+  };
+
+  const nameCandidate =
+    lines.find((l) => looksLikeName(l)) || "";
+
+  result.name = nameCandidate;
+
+  // 6) Si no hay empresa y tenemos nombre, probamos línea anterior o posterior
+  if (!result.company && result.name) {
+    const idx = lines.indexOf(result.name);
+    if (idx >= 0) {
+      const before = lines[idx - 1];
+      const after = lines[idx + 1];
+
+      const isValidCompanyLine = (line) =>
+        line &&
+        !emailRegex.test(line) &&
+        !phoneRegex.test(line) &&
+        !urlRegex.test(line) &&
+        line.length <= 40;
+
+      if (isValidCompanyLine(before)) {
+        result.company = before;
+      } else if (isValidCompanyLine(after)) {
+        result.company = after;
+      }
     }
   }
 
