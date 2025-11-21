@@ -4,17 +4,20 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import {
   getFirestore,
   collection,
-  addDoc,
-  getDocs,
-  query,
-  where,
-  serverTimestamp,
+ addDoc,
+ getDocs,
+ query,
+ where,
+ serverTimestamp,
+ doc,
+ deleteDoc,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
   getStorage,
   ref,
   uploadString,
   getDownloadURL,
+  deleteObject,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
 import {
   getAuth,
@@ -160,7 +163,7 @@ window.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    ocrStatus.textContent = "Leyendo texto (OCR)...";
+    ocrStatus.textContent = "Leyendo texto (OCR real)...";
     console.log("🔍 Iniciando OCR real con Tesseract...");
 
     try {
@@ -206,12 +209,13 @@ window.addEventListener("DOMContentLoaded", () => {
     saveStatus.textContent = "Guardando...";
 
     let imageUrl = null;
+    let storagePath = null;
 
     // Subir imagen si existe
     if (currentImageDataUrl) {
       try {
         const id = Date.now();
-        const storagePath = `cards-images/${id}.jpg`;
+        storagePath = `cards-images/${id}.jpg`;
         const imageRef = ref(storage, storagePath);
         await uploadString(imageRef, currentImageDataUrl, "data_url");
         imageUrl = await getDownloadURL(imageRef);
@@ -223,7 +227,7 @@ window.addEventListener("DOMContentLoaded", () => {
     }
 
     try {
-      await addDoc(collection(db, "cards"), {
+      const docRef = await addDoc(collection(db, "cards"), {
         userId: currentUser.uid,
         name,
         company,
@@ -231,18 +235,69 @@ window.addEventListener("DOMContentLoaded", () => {
         email,
         notes,
         imageUrl,
+        storagePath,
         createdAt: serverTimestamp(),
       });
 
       saveStatus.textContent = "Tarjeta guardada correctamente.";
 
-      await loadCards(currentUser.uid);
+      // Añadimos también a la lista local
+      cards.unshift({
+        id: docRef.id,
+        userId: currentUser.uid,
+        name,
+        company,
+        phone,
+        email,
+        notes,
+        imageUrl,
+        storagePath,
+      });
+
       renderCards(cardsList);
     } catch (err) {
       console.error("Error guardando tarjeta:", err);
       saveStatus.textContent = "Error guardando la tarjeta.";
     }
   };
+
+  // --- BORRAR TARJETA (delegación de eventos) ---
+  cardsList.addEventListener("click", async (event) => {
+    const btn = event.target.closest(".delete-btn");
+    if (!btn) return;
+
+    const cardEl = btn.closest(".saved-card");
+    if (!cardEl) return;
+
+    const cardId = cardEl.dataset.id;
+    const storagePath = cardEl.dataset.storagePath || null;
+
+    if (!cardId) return;
+
+    const ok = confirm("¿Seguro que quieres borrar esta tarjeta?");
+    if (!ok) return;
+
+    try {
+      // 1. Borrar documento en Firestore
+      await deleteDoc(doc(db, "cards", cardId));
+
+      // 2. Borrar imagen en Storage (si tiene)
+      if (storagePath) {
+        try {
+          await deleteObject(ref(storage, storagePath));
+        } catch (e) {
+          console.error("Error borrando imagen de Storage (continuo):", e);
+        }
+      }
+
+      // 3. Actualizar lista local y volver a pintar
+      cards = cards.filter((c) => c.id !== cardId);
+      renderCards(cardsList);
+    } catch (err) {
+      console.error("Error borrando tarjeta:", err);
+      alert("Error al borrar la tarjeta.");
+    }
+  });
 
   function disableApp() {
     imageInput.disabled = true;
@@ -262,7 +317,9 @@ async function loadCards(uid) {
   cards = [];
   const q = query(collection(db, "cards"), where("userId", "==", uid));
   const snap = await getDocs(q);
-  snap.forEach((doc) => cards.push({ id: doc.id, ...doc.data() }));
+  snap.forEach((docSnap) =>
+    cards.push({ id: docSnap.id, ...docSnap.data() })
+  );
 }
 
 function renderCards(container) {
@@ -281,6 +338,8 @@ function renderCards(container) {
   cards.forEach((card) => {
     const div = document.createElement("div");
     div.className = "saved-card";
+    div.dataset.id = card.id;
+    div.dataset.storagePath = card.storagePath || "";
 
     div.innerHTML = `
       <div class="saved-card-thumbnail">
@@ -292,6 +351,9 @@ function renderCards(container) {
         <div class="saved-card-meta">
           ${card.phone || ""} ${card.email ? " · " + card.email : ""}
         </div>
+      </div>
+      <div class="saved-card-actions">
+        <button class="btn small-btn secondary-btn delete-btn">Borrar</button>
       </div>
     `;
 
@@ -327,7 +389,7 @@ async function performRealOCR(dataUrl) {
     throw new Error("Tesseract no está cargado.");
   }
 
-  const { data } = await Tesseract.recognize(dataUrl, "eng", {
+  const { data } = await Tesseract.recognize(dataUrl, "eng+spa", {
     logger: (m) => console.log("Tesseract:", m),
   });
 
