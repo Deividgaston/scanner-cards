@@ -1,1 +1,271 @@
-body{font-family:Arial;}
+/* ------------------------------
+   ESTILO GENERAL
+------------------------------ */
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: system-ui, -apple-system, Arial, sans-serif;
+  background: #f4f5f7;
+  color: #222;
+}
+
+h1, h2, h3 {
+  margin-top: 0;
+}
+
+.container {
+  max-width: 900px;
+  margin: auto;
+  padding: 1rem;
+}
+
+/* ------------------------------
+   ENCABEZADO
+------------------------------ */
+
+.app-header {
+  text-align: center;
+  background: white;
+  padding: 1.5rem 1rem;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+}
+
+.app-header h1 {
+  font-size: 1.8rem;
+  margin-bottom: 0.4rem;
+}
+
+.status-text {
+  color: #666;
+  font-size: 0.9rem;
+  margin-top: 0.5rem;
+}
+
+/* ------------------------------
+   TARJETAS
+------------------------------ */
+
+.card {
+  background: white;
+  border-radius: 12px;
+  padding: 1.2rem;
+  margin-bottom: 1.2rem;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+
+/* ------------------------------
+   BOTONES
+------------------------------ */
+
+.btn {
+  display: inline-block;
+  padding: 0.75rem 1rem;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.primary-btn {
+  background: #007aff;
+  color: white;
+}
+
+.secondary-btn {
+  background: #ececec;
+  color: #222;
+}
+
+.small-btn {
+  padding: 0.4rem 0.6rem;
+  font-size: 0.8rem;
+}
+
+/* ------------------------------
+   FORMULARIO
+------------------------------ */
+
+.form-group {
+  margin-bottom: 0.9rem;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 0.3rem;
+  font-size: 0.9rem;
+}
+
+.form-group input,
+.form-group select,
+.form-group textarea {
+  width: 100%;
+  padding: 0.6rem;
+  border-radius: 8px;
+  border: 1px solid #ccc;
+  font-size: 1rem;
+}
+
+/* ------------------------------
+   PREVISUALIZACIÓN IMAGEN
+------------------------------ */
+
+.image-preview {
+  margin-top: 1rem;
+  text-align: center;
+}
+
+.image-preview img {
+  width: 100%;
+  max-height: 350px;
+  object-fit: contain;
+  border-radius: 10px;
+  border: 1px solid #ddd;
+}
+
+.hidden {
+  display: none;
+}
+
+/* ------------------------------
+   LISTA DE TARJETAS GUARDADAS
+------------------------------ */
+
+.cards-list {
+  margin-top: 1rem;
+}
+
+.saved-card {
+  display: flex;
+  align-items: center;
+  background: #fafafa;
+  padding: 0.8rem;
+  margin-bottom: 0.5rem;
+  border-radius: 12px;
+  border: 1px solid #eee;
+}
+
+.saved-card-thumbnail {
+  width: 60px;
+  height: 60px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #ddd;
+  margin-right: 1rem;
+}
+
+.saved-card-thumbnail img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.saved-card-content {
+  flex: 1;
+}
+
+.saved-card-title {
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.saved-card-subtitle {
+  color: #555;
+  font-size: 0.85rem;
+  margin-top: 0.2rem;
+}
+
+.saved-card-meta {
+  color: #777;
+  font-size: 0.8rem;
+  margin-top: 0.3rem;
+}
+
+.saved-card-actions {
+  margin-left: 0.5rem;
+}
+
+/* ------------------------------
+   PANEL DE LÍNEAS OCR
+------------------------------ */
+
+.ocr-lines-card {
+  background: #ffffff;
+  border: 1px solid #eee;
+}
+
+.ocr-line-item {
+  padding: 0.7rem;
+  margin-bottom: 0.6rem;
+  border-radius: 10px;
+  border: 1px solid #ddd;
+  background: #fafafa;
+}
+
+.ocr-line-text {
+  font-weight: 600;
+  margin-bottom: 0.4rem;
+}
+
+.ocr-line-buttons .btn {
+  margin-right: 4px;
+  margin-bottom: 4px;
+}
+
+/* ------------------------------
+   DASHBOARD
+------------------------------ */
+
+.dashboard-card {
+  border: 1px solid #e2e2e2;
+}
+
+.dashboard-content {
+  margin-top: 1rem;
+}
+
+.dashboard-block {
+  background: #fafafa;
+  border-radius: 10px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  border: 1px solid #e0e0e0;
+}
+
+.dashboard-block h3 {
+  margin-top: 0;
+}
+
+.dashboard-list {
+  padding-left: 1rem;
+}
+
+.dashboard-list li {
+  margin-bottom: 0.3rem;
+}
+
+/* ------------------------------
+   FOOTER
+------------------------------ */
+
+.app-footer {
+  text-align: center;
+  padding: 1.5rem;
+  font-size: 0.85rem;
+  color: #888;
+}
+
+/* ------------------------------
+   RESPONSIVE / ESCRITORIO
+------------------------------ */
+
+.desktop-only {
+  display: none;
+}
+
+@media (min-width: 900px) {
+  .desktop-only {
+    display: inline-block;
+  }
+}
