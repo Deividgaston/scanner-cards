@@ -10,16 +10,19 @@
 <body>
   <header class="app-header">
     <h1>Tarjetas de Visita</h1>
-    <p>Escanea tarjetas, guarda contactos y gestiona tu red profesional.</p>
+    <p>Escanea tarjetas (frontal y trasera), guarda contactos y gestiona tu red.</p>
 
-    <!-- Botón para configurar la API key -->
-    <div style="margin-top:0.75rem;">
-      <button class="btn primary-btn" onclick="configurarApiKey()">
+    <!-- Botones para configurar claves -->
+    <div style="margin-top:0.75rem; display:flex; gap:0.5rem; justify-content:center; flex-wrap:wrap;">
+      <button class="btn primary-btn" onclick="configurarFirebaseApiKey()">
         Configurar API Key de Firebase
+      </button>
+      <button class="btn secondary-btn" onclick="configurarGeminiApiKey()">
+        Configurar API Key de Gemini
       </button>
     </div>
 
-    <div class="auth-bar">
+    <div class="auth-bar" style="margin-top:0.75rem;">
       <div class="auth-user" id="authUserInfo" hidden>
         <div class="auth-text">
           <span id="userName"></span>
@@ -42,25 +45,42 @@
 
   <main class="container">
 
-    <!-- Subida de imagen -->
+    <!-- Subida de imagen (dos caras obligatorias) -->
     <section class="card capture-card">
       <h2>Nueva tarjeta</h2>
 
-      <label class="btn primary-btn">
-        📷 Hacer foto / Subir imagen
-        <input id="imageInput" type="file" accept="image/*" capture="environment" hidden />
-      </label>
-
-      <div id="imagePreviewContainer" class="image-preview hidden">
-        <img id="imagePreview" alt="Previsualización tarjeta" />
+      <!-- Cara frontal -->
+      <div class="form-group">
+        <label class="btn primary-btn">
+          📷 Foto frontal
+          <input id="frontImageInput" type="file" accept="image/*" capture="environment" hidden />
+        </label>
+        <div id="frontImagePreviewContainer" class="image-preview hidden">
+          <p class="preview-label">Previsualización cara frontal</p>
+          <img id="frontImagePreview" alt="Previsualización frontal" />
+        </div>
+        <button id="rotateFrontButton" class="btn secondary-btn" disabled>
+          ↪️ Rotar frontal 90º
+        </button>
       </div>
 
-      <button id="rotateButton" class="btn secondary-btn" disabled>
-        ↪️ Rotar 90º
-      </button>
+      <!-- Cara trasera -->
+      <div class="form-group" style="margin-top:1rem;">
+        <label class="btn primary-btn">
+          📷 Foto trasera
+          <input id="backImageInput" type="file" accept="image/*" capture="environment" hidden />
+        </label>
+        <div id="backImagePreviewContainer" class="image-preview hidden">
+          <p class="preview-label">Previsualización cara trasera</p>
+          <img id="backImagePreview" alt="Previsualización trasera" />
+        </div>
+        <button id="rotateBackButton" class="btn secondary-btn" disabled>
+          ↪️ Rotar trasera 90º
+        </button>
+      </div>
 
-      <button id="scanButton" class="btn secondary-btn" disabled>
-        🔍 Escanear tarjeta (OCR)
+      <button id="scanButton" class="btn secondary-btn" disabled style="margin-top:1rem;">
+        🔍 Escanear tarjeta (Gemini 2.5 Flash)
       </button>
 
       <p id="ocrStatus" class="status-text"></p>
@@ -134,10 +154,10 @@
       <p id="saveStatus" class="status-text"></p>
     </section>
 
-    <!-- Panel de líneas OCR (nuevo) -->
+    <!-- Panel de líneas OCR (para ajustar manualmente) -->
     <section class="card ocr-lines-card">
-      <h3>Líneas detectadas del OCR</h3>
-      <p style="font-size:0.85rem;color:#888">Selecciona qué representa cada línea:</p>
+      <h3>Líneas detectadas</h3>
+      <p style="font-size:0.85rem;color:#888">Pulsa para asignar las líneas a cada campo.</p>
       <div id="ocrLinesContainer"></div>
     </section>
 
@@ -171,21 +191,27 @@
   </footer>
 
   <script>
-    function configurarApiKey() {
+    function configurarFirebaseApiKey() {
       const actual = localStorage.getItem("firebaseApiKey") || "";
       const key = prompt("Introduce tu API key de Firebase:", actual);
       if (key) {
         localStorage.setItem("firebaseApiKey", key.trim());
-        alert("API key guardada. Recarga la página.");
+        alert("API key de Firebase guardada. Recarga la página.");
         location.reload();
+      }
+    }
+
+    function configurarGeminiApiKey() {
+      const actual = localStorage.getItem("geminiApiKey") || "";
+      const key = prompt("Introduce tu API key de Gemini:", actual);
+      if (key) {
+        localStorage.setItem("geminiApiKey", key.trim());
+        alert("API key de Gemini guardada. Ya puedes escanear tarjetas.");
       }
     }
   </script>
 
-  <!-- Tesseract.js para OCR REAL -->
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-
-  <!-- Lógica -->
+  <!-- Lógica principal -->
   <script type="module" src="app.js"></script>
 </body>
 </html>
