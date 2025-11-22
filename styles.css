@@ -198,33 +198,6 @@ h1, h2, h3 {
 }
 
 /* ------------------------------
-   PANEL DE LÍNEAS OCR
------------------------------- */
-
-.ocr-lines-card {
-  background: #ffffff;
-  border: 1px solid #eee;
-}
-
-.ocr-line-item {
-  padding: 0.7rem;
-  margin-bottom: 0.6rem;
-  border-radius: 10px;
-  border: 1px solid #ddd;
-  background: #fafafa;
-}
-
-.ocr-line-text {
-  font-weight: 600;
-  margin-bottom: 0.4rem;
-}
-
-.ocr-line-buttons .btn {
-  margin-right: 4px;
-  margin-bottom: 4px;
-}
-
-/* ------------------------------
    DASHBOARD
 ------------------------------ */
 
