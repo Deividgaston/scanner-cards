@@ -30,11 +30,12 @@ import {
 let app, db, storage, auth, provider;
 
 let currentUser = null;
-let currentImageDataUrl = null;
+let frontImageDataUrl = null;
+let backImageDataUrl = null;
 let cards = [];
 let dashboardVisible = false;
 
-// Referencias de inputs y panel OCR a nivel global
+// Referencias globales a inputs y panel OCR
 let nameInput,
   companyInput,
   positionInput,
@@ -46,6 +47,8 @@ let nameInput,
   notesInput,
   ocrLinesContainer,
   ocrStatusGlobal;
+
+const GEMINI_MODEL = "gemini-2.5-flash";
 
 // Inicializar Firebase
 try {
@@ -72,16 +75,25 @@ window.addEventListener("DOMContentLoaded", () => {
   const userNameSpan = document.getElementById("userName");
   const userEmailSpan = document.getElementById("userEmail");
 
-  const imageInput = document.getElementById("imageInput");
-  const imagePreview = document.getElementById("imagePreview");
-  const imagePreviewContainer = document.getElementById("imagePreviewContainer");
+  const frontImageInput = document.getElementById("frontImageInput");
+  const frontImagePreview = document.getElementById("frontImagePreview");
+  const frontImagePreviewContainer = document.getElementById(
+    "frontImagePreviewContainer"
+  );
 
-  const rotateButton = document.getElementById("rotateButton");
+  const backImageInput = document.getElementById("backImageInput");
+  const backImagePreview = document.getElementById("backImagePreview");
+  const backImagePreviewContainer = document.getElementById(
+    "backImagePreviewContainer"
+  );
+
+  const rotateFrontButton = document.getElementById("rotateFrontButton");
+  const rotateBackButton = document.getElementById("rotateBackButton");
   const scanButton = document.getElementById("scanButton");
   const ocrStatus = document.getElementById("ocrStatus");
   ocrStatusGlobal = ocrStatus;
 
-  // Asignamos inputs globales
+  // Inputs de datos
   nameInput = document.getElementById("nameInput");
   companyInput = document.getElementById("companyInput");
   positionInput = document.getElementById("positionInput");
@@ -153,74 +165,123 @@ window.addEventListener("DOMContentLoaded", () => {
     renderCards(cardsList);
   });
 
-  // --- SUBIR IMAGEN ---
-  imageInput.onchange = (e) => {
+  // --- SUBIR IMAGEN FRONTAL ---
+  frontImageInput.onchange = (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
     const reader = new FileReader();
     reader.onload = (ev) => {
-      currentImageDataUrl = ev.target.result;
-      imagePreview.src = currentImageDataUrl;
-      imagePreviewContainer.classList.remove("hidden");
+      frontImageDataUrl = ev.target.result;
+      frontImagePreview.src = frontImageDataUrl;
+      frontImagePreviewContainer.classList.remove("hidden");
 
-      scanButton.disabled = false;
-      rotateButton.disabled = false;
-      ocrStatus.textContent = "Imagen cargada. Puedes rotarla o escanearla.";
+      rotateFrontButton.disabled = false;
+      if (frontImageDataUrl && backImageDataUrl) {
+        scanButton.disabled = false;
+      }
+      ocrStatus.textContent = "Cara frontal cargada.";
     };
     reader.readAsDataURL(file);
   };
 
-  // --- ROTAR 90º ---
-  rotateButton.onclick = async () => {
-    if (!currentImageDataUrl) return;
+  // --- SUBIR IMAGEN TRASERA ---
+  backImageInput.onchange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      backImageDataUrl = ev.target.result;
+      backImagePreview.src = backImageDataUrl;
+      backImagePreviewContainer.classList.remove("hidden");
+
+      rotateBackButton.disabled = false;
+      if (frontImageDataUrl && backImageDataUrl) {
+        scanButton.disabled = false;
+      }
+      ocrStatus.textContent = "Cara trasera cargada.";
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // --- ROTAR FRONTAL 90º ---
+  rotateFrontButton.onclick = async () => {
+    if (!frontImageDataUrl) return;
     try {
-      currentImageDataUrl = await rotateDataUrl90(currentImageDataUrl);
-      imagePreview.src = currentImageDataUrl;
-      ocrStatus.textContent = "Imagen rotada 90º.";
+      frontImageDataUrl = await rotateDataUrl90(frontImageDataUrl);
+      frontImagePreview.src = frontImageDataUrl;
+      ocrStatus.textContent = "Cara frontal rotada 90º.";
     } catch (err) {
-      console.error("Error rotando:", err);
-      ocrStatus.textContent = "Error al rotar la imagen.";
+      console.error("Error rotando frontal:", err);
+      ocrStatus.textContent = "Error al rotar la cara frontal.";
     }
   };
 
-  // --- OCR REAL CON TESSERACT ---
+  // --- ROTAR TRASERA 90º ---
+  rotateBackButton.onclick = async () => {
+    if (!backImageDataUrl) return;
+    try {
+      backImageDataUrl = await rotateDataUrl90(backImageDataUrl);
+      backImagePreview.src = backImageDataUrl;
+      ocrStatus.textContent = "Cara trasera rotada 90º.";
+    } catch (err) {
+      console.error("Error rotando trasera:", err);
+      ocrStatus.textContent = "Error al rotar la cara trasera.";
+    }
+  };
+
+  // --- ESCANEAR CON GEMINI (2.5 Flash) ---
   scanButton.onclick = async () => {
-    if (!currentImageDataUrl) {
-      ocrStatus.textContent = "Sube una imagen antes.";
+    if (!frontImageDataUrl || !backImageDataUrl) {
+      ocrStatus.textContent = "Haz las dos fotos (frontal y trasera) antes de escanear.";
       return;
     }
 
-    ocrStatus.textContent = "Leyendo texto (OCR real)...";
-    console.log("🔍 Iniciando OCR real con Tesseract...");
+    ocrStatus.textContent = "Enviando imágenes a Gemini 2.5 Flash...";
+    console.log("🔍 Gemini OCR (frontal + trasera)");
 
     try {
-      const text = await performRealOCR(currentImageDataUrl);
-      console.log("🔍 Texto OCR:", text);
+      const { parsed, rawText } = await callGeminiForCard(
+        frontImageDataUrl,
+        backImageDataUrl
+      );
 
-      // Panel con todas las líneas para que tú asignes
-      renderOcrLinesPanel(text);
-
-      const parsed = parseBusinessCardText(text);
-      console.log("🔍 Datos parseados:", parsed);
-
-      if (!parsed.name && !parsed.email && !parsed.phone) {
-        ocrStatus.textContent =
-          "No se ha detectado bien el texto. Revisa la foto o ajusta manualmente.";
+      if (rawText) {
+        renderOcrLinesPanel(rawText);
       } else {
-        ocrStatus.textContent = "OCR completado. Revisa los datos.";
+        ocrLinesContainer.innerHTML =
+          "<p>No se han podido obtener líneas de texto.</p>";
       }
 
-      if (parsed.name) nameInput.value = parsed.name;
-      if (parsed.company) companyInput.value = parsed.company;
-      if (parsed.position) positionInput.value = parsed.position;
-      if (parsed.phone) phoneInput.value = parsed.phone;
-      if (parsed.email) emailInput.value = parsed.email;
-      if (parsed.website) websiteInput.value = parsed.website;
+      if (parsed) {
+        if (parsed.name) nameInput.value = parsed.name;
+        if (parsed.company) companyInput.value = parsed.company;
+        if (parsed.position) positionInput.value = parsed.position;
+        if (parsed.phone) phoneInput.value = parsed.phone;
+        if (parsed.email) emailInput.value = parsed.email;
+        if (parsed.website) websiteInput.value = parsed.website;
+        if (parsed.region) regionInput.value = parsed.region;
+        if (parsed.category) categoryInput.value = parsed.category;
+        if (parsed.notes) notesInput.value = parsed.notes;
+
+        ocrStatus.textContent =
+          "Gemini ha rellenado los campos. Revisa y ajusta si hace falta.";
+      } else {
+        ocrStatus.textContent =
+          "Gemini devolvió texto no estructurado. He intentado interpretarlo.";
+        const fallback = parseBusinessCardText(rawText || "");
+        if (fallback.name) nameInput.value = fallback.name;
+        if (fallback.company) companyInput.value = fallback.company;
+        if (fallback.position) positionInput.value = fallback.position;
+        if (fallback.phone) phoneInput.value = fallback.phone;
+        if (fallback.email) emailInput.value = fallback.email;
+        if (fallback.website) websiteInput.value = fallback.website;
+      }
     } catch (err) {
-      console.error("❌ Error OCR:", err);
+      console.error("❌ Error Gemini:", err);
       ocrStatus.textContent =
-        "Error al realizar el OCR. Prueba con más luz o foto más cercana.";
+        "Error al llamar a Gemini: " + (err.message || String(err));
     }
   };
 
@@ -243,24 +304,37 @@ window.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
+    if (!frontImageDataUrl || !backImageDataUrl) {
+      saveStatus.textContent = "Debes tener las dos fotos (frontal y trasera).";
+      return;
+    }
+
     saveStatus.textContent = "Guardando...";
 
-    let imageUrl = null;
-    let storagePath = null;
+    let frontImageUrl = null;
+    let backImageUrl = null;
+    let frontStoragePath = null;
+    let backStoragePath = null;
 
-    // Subir imagen si existe
-    if (currentImageDataUrl) {
-      try {
-        const id = Date.now();
-        storagePath = `cards-images/${id}.jpg`;
-        const imageRef = ref(storage, storagePath);
-        await uploadString(imageRef, currentImageDataUrl, "data_url");
-        imageUrl = await getDownloadURL(imageRef);
-      } catch (err) {
-        console.error("Error subiendo imagen:", err);
-        saveStatus.textContent = "Error subiendo la imagen.";
-        return;
-      }
+    // Subir imágenes a Firebase Storage
+    try {
+      const baseId = Date.now();
+
+      // Frontal
+      frontStoragePath = `cards-images/${baseId}-front.jpg`;
+      const frontRef = ref(storage, frontStoragePath);
+      await uploadString(frontRef, frontImageDataUrl, "data_url");
+      frontImageUrl = await getDownloadURL(frontRef);
+
+      // Trasera
+      backStoragePath = `cards-images/${baseId}-back.jpg`;
+      const backRef = ref(storage, backStoragePath);
+      await uploadString(backRef, backImageDataUrl, "data_url");
+      backImageUrl = await getDownloadURL(backRef);
+    } catch (err) {
+      console.error("Error subiendo imágenes:", err);
+      saveStatus.textContent = "Error subiendo las imágenes a Firebase Storage.";
+      return;
     }
 
     try {
@@ -275,8 +349,10 @@ window.addEventListener("DOMContentLoaded", () => {
         region,
         category,
         notes,
-        imageUrl,
-        storagePath,
+        frontImageUrl,
+        backImageUrl,
+        frontStoragePath,
+        backStoragePath,
         createdAt: serverTimestamp(),
       });
 
@@ -294,8 +370,10 @@ window.addEventListener("DOMContentLoaded", () => {
         region,
         category,
         notes,
-        imageUrl,
-        storagePath,
+        frontImageUrl,
+        backImageUrl,
+        frontStoragePath,
+        backStoragePath,
       });
 
       renderCards(cardsList);
@@ -306,7 +384,7 @@ window.addEventListener("DOMContentLoaded", () => {
     }
   };
 
-  // --- BORRAR TARJETA (delegación de eventos) ---
+  // --- BORRAR TARJETA ---
   cardsList.addEventListener("click", async (event) => {
     const btn = event.target.closest(".delete-btn");
     if (!btn) return;
@@ -315,7 +393,8 @@ window.addEventListener("DOMContentLoaded", () => {
     if (!cardEl) return;
 
     const cardId = cardEl.dataset.id;
-    const storagePath = cardEl.dataset.storagePath || null;
+    const frontStoragePath = cardEl.dataset.frontStoragePath || null;
+    const backStoragePath = cardEl.dataset.backStoragePath || null;
 
     if (!cardId) return;
 
@@ -325,13 +404,22 @@ window.addEventListener("DOMContentLoaded", () => {
     try {
       await deleteDoc(doc(db, "cards", cardId));
 
-      if (storagePath) {
-        try {
-          await deleteObject(ref(storage, storagePath));
-        } catch (e) {
-          console.error("Error borrando imagen de Storage (continuo):", e);
-        }
+      const deletions = [];
+      if (frontStoragePath) {
+        deletions.push(
+          deleteObject(ref(storage, frontStoragePath)).catch((e) =>
+            console.error("Error borrando frontal:", e)
+          )
+        );
       }
+      if (backStoragePath) {
+        deletions.push(
+          deleteObject(ref(storage, backStoragePath)).catch((e) =>
+            console.error("Error borrando trasera:", e)
+          )
+        );
+      }
+      await Promise.all(deletions);
 
       cards = cards.filter((c) => c.id !== cardId);
       renderCards(cardsList);
@@ -342,7 +430,7 @@ window.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // --- TOGGLE DASHBOARD (solo escritorio) ---
+  // --- TOGGLE DASHBOARD ---
   if (dashboardToggleButton) {
     dashboardToggleButton.onclick = () => {
       console.log("📊 Click en botón dashboard");
@@ -360,14 +448,17 @@ window.addEventListener("DOMContentLoaded", () => {
   }
 
   function disableApp() {
-    imageInput.disabled = true;
+    frontImageInput.disabled = true;
+    backImageInput.disabled = true;
     scanButton.disabled = true;
-    rotateButton.disabled = true;
+    rotateFrontButton.disabled = true;
+    rotateBackButton.disabled = true;
     saveContactButton.disabled = true;
   }
 
   function enableApp() {
-    imageInput.disabled = false;
+    frontImageInput.disabled = false;
+    backImageInput.disabled = false;
   }
 });
 
@@ -397,7 +488,8 @@ function renderCards(container) {
     const div = document.createElement("div");
     div.className = "saved-card";
     div.dataset.id = card.id;
-    div.dataset.storagePath = card.storagePath || "";
+    div.dataset.frontStoragePath = card.frontStoragePath || "";
+    div.dataset.backStoragePath = card.backStoragePath || "";
 
     const regionText = card.region ? ` · ${card.region}` : "";
     const catText = card.category ? ` · ${card.category}` : "";
@@ -406,7 +498,11 @@ function renderCards(container) {
 
     div.innerHTML = `
       <div class="saved-card-thumbnail">
-        ${card.imageUrl ? `<img src="${card.imageUrl}" />` : "T"}
+        ${
+          card.frontImageUrl
+            ? `<img src="${card.frontImageUrl}" />`
+            : "T"
+        }
       </div>
       <div class="saved-card-content">
         <div class="saved-card-title">${card.name || "Sin nombre"}</div>
@@ -426,7 +522,7 @@ function renderCards(container) {
   });
 }
 
-// Construir dashboard con análisis (incluyendo agrupación por empresa)
+// Dashboard
 function buildDashboard(container) {
   console.log("📊 Construyendo dashboard con", cards.length, "tarjetas");
 
@@ -456,7 +552,6 @@ function buildDashboard(container) {
     byCompany[comp] = (byCompany[comp] || 0) + 1;
   });
 
-  // Vertical principal
   let topCategory = null;
   let topCategoryCount = 0;
   for (const [cat, count] of Object.entries(byCategory)) {
@@ -466,7 +561,6 @@ function buildDashboard(container) {
     }
   }
 
-  // Región principal
   let topRegion = null;
   let topRegionCount = 0;
   for (const [reg, count] of Object.entries(byRegion)) {
@@ -476,7 +570,6 @@ function buildDashboard(container) {
     }
   }
 
-  // Empresa con más contactos
   let topCompany = null;
   let topCompanyCount = 0;
   for (const [comp, count] of Object.entries(byCompany)) {
@@ -488,30 +581,28 @@ function buildDashboard(container) {
 
   let html = "";
 
-  // Bloque resumen general + análisis
   html += `<div class="dashboard-block">
     <h3>Resumen general</h3>
     <p>Total tarjetas: <strong>${total}</strong></p>
     <p style="margin-top:0.4rem;font-size:0.8rem;color:#9ca3af;">
       ${
         topCategory
-          ? `Tu vertical más frecuente es <strong>${topCategory}</strong> con <strong>${topCategoryCount}</strong> contactos.`
+          ? `Vertical más frecuente: <strong>${topCategory}</strong> (${topCategoryCount} contactos).`
           : ""
       }
       ${
         topRegion
-          ? `<br/>La zona donde más tarjetas tienes es <strong>${topRegion}</strong> con <strong>${topRegionCount}</strong> contactos.`
+          ? `<br/>Zona con más contactos: <strong>${topRegion}</strong> (${topRegionCount}).`
           : ""
       }
       ${
         topCompany
-          ? `<br/>La empresa donde más contactos tienes es <strong>${topCompany}</strong> con <strong>${topCompanyCount}</strong> personas distintas.`
+          ? `<br/>Empresa con más contactos: <strong>${topCompany}</strong> (${topCompanyCount} personas).`
           : ""
       }
     </p>
   </div>`;
 
-  // Bloque por tipo de contacto
   html += `<div class="dashboard-block">
     <h3>Por tipo de contacto</h3>
     <ul class="dashboard-list">
@@ -521,7 +612,6 @@ function buildDashboard(container) {
     </ul>
   </div>`;
 
-  // Bloque por zona / región
   html += `<div class="dashboard-block">
     <h3>Por zona / región</h3>
     <ul class="dashboard-list">
@@ -531,7 +621,6 @@ function buildDashboard(container) {
     </ul>
   </div>`;
 
-  // Bloque por empresa
   html += `<div class="dashboard-block">
     <h3>Por empresa (nº de contactos)</h3>
     <ul class="dashboard-list">
@@ -544,7 +633,7 @@ function buildDashboard(container) {
   container.innerHTML = html;
 }
 
-// Rotar la imagen 90º usando canvas
+// Rotar imagen 90º
 function rotateDataUrl90(dataUrl) {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -566,20 +655,110 @@ function rotateDataUrl90(dataUrl) {
   });
 }
 
-// OCR REAL con Tesseract
-async function performRealOCR(dataUrl) {
-  if (!window.Tesseract) {
-    throw new Error("Tesseract no está cargado.");
+// Llamada a Gemini 2.5 Flash con dos imágenes
+async function callGeminiForCard(frontDataUrl, backDataUrl) {
+  const apiKey = localStorage.getItem("geminiApiKey");
+  if (!apiKey) {
+    throw new Error(
+      "Gemini API key no configurada. Pulsa en 'Configurar API Key de Gemini'."
+    );
   }
 
-  const { data } = await Tesseract.recognize(dataUrl, "eng+spa", {
-    logger: (m) => console.log("Tesseract:", m),
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(
+    apiKey
+  )}`;
+
+  const parts = [
+    {
+      text:
+        "Analiza estas imágenes de una tarjeta de visita (frontal y trasera) " +
+        "y devuelve SOLO un JSON válido con este formato exacto:\n" +
+        "{\n" +
+        '  "name": "",\n' +
+        '  "company": "",\n' +
+        '  "position": "",\n' +
+        '  "phone": "",\n' +
+        '  "email": "",\n' +
+        '  "website": "",\n' +
+        '  "region": "",\n' +
+        '  "category": "",\n' +
+        '  "notes": "",\n' +
+        '  "raw_lines": ["..."]\n' +
+        "}\n" +
+        "No incluyas nada de texto fuera del JSON. " +
+        "Si no conoces un campo, déjalo como cadena vacía. " +
+        'En "raw_lines" pon una lista de líneas de texto relevantes extraídas de la tarjeta.',
+    },
+  ];
+
+  const dataUrlToBase64 = (d) => {
+    if (!d) return "";
+    const parts = d.split(",");
+    return parts.length > 1 ? parts[1] : parts[0];
+  };
+
+  if (frontDataUrl) {
+    parts.push({
+      inline_data: {
+        mime_type: "image/jpeg",
+        data: dataUrlToBase64(frontDataUrl),
+      },
+    });
+  }
+
+  if (backDataUrl) {
+    parts.push({
+      inline_data: {
+        mime_type: "image/jpeg",
+        data: dataUrlToBase64(backDataUrl),
+      },
+    });
+  }
+
+  const body = {
+    contents: [
+      {
+        parts,
+      },
+    ],
+  };
+
+  const res = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
   });
 
-  return data.text || "";
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`HTTP ${res.status}: ${errText}`);
+  }
+
+  const json = await res.json();
+  const partsOut = json.candidates?.[0]?.content?.parts || [];
+  const text = partsOut
+    .map((p) => p.text || "")
+    .join("\n")
+    .trim();
+
+  let parsed = null;
+  let rawTextFromJson = "";
+
+  if (text) {
+    try {
+      parsed = JSON.parse(text);
+      if (Array.isArray(parsed.raw_lines)) {
+        rawTextFromJson = parsed.raw_lines.join("\n");
+      }
+    } catch (e) {
+      console.warn("No se pudo parsear JSON de Gemini, usando texto bruto", e);
+    }
+  }
+
+  return { parsed, rawText: rawTextFromJson || text };
 }
 
-// Panel para asignar manualmente líneas OCR
+// Panel de líneas OCR
 function renderOcrLinesPanel(text) {
   if (!ocrLinesContainer) return;
 
@@ -632,7 +811,7 @@ function renderOcrLinesPanel(text) {
   });
 }
 
-// Parser mejorado de texto de tarjeta
+// Parser de texto de tarjeta (fallback)
 function parseBusinessCardText(text) {
   const result = {
     name: "",
@@ -649,7 +828,6 @@ function parseBusinessCardText(text) {
     .map((l) => l.trim())
     .filter(Boolean);
 
-  // Normalizamos espacios
   lines = lines.map((l) => l.replace(/\s+/g, " "));
 
   const emailRegex = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
@@ -686,7 +864,6 @@ function parseBusinessCardText(text) {
     s === s.toUpperCase() &&
     /[A-ZÁÉÍÓÚÑ]/.test(s);
 
-  // 1) EMAIL, TELÉFONO, WEB
   for (const line of lines) {
     if (!result.email && emailRegex.test(line)) {
       result.email = line.match(emailRegex)[0];
@@ -696,7 +873,6 @@ function parseBusinessCardText(text) {
     }
     if (!result.website && urlRegex.test(line)) {
       let w = line.match(urlRegex)[0].trim();
-      // Añadimos https si no viene
       if (!/^https?:\/\//i.test(w)) {
         w = "https://" + w;
       }
@@ -704,7 +880,6 @@ function parseBusinessCardText(text) {
     }
   }
 
-  // 2) CARGO (posición)
   for (const line of lines) {
     const lower = line.toLowerCase();
     if (
@@ -718,7 +893,6 @@ function parseBusinessCardText(text) {
     }
   }
 
-  // 3) Posible empresa: líneas con S.L., S.A., GROUP, ARQUITECTOS, INGENIERÍA…
   const companyIndicators = [
     "s.l",
     "s.a",
@@ -745,12 +919,10 @@ function parseBusinessCardText(text) {
   });
 
   if (candidateCompanies.length > 0) {
-    // Si hay varias, cogemos la más larga
     candidateCompanies.sort((a, b) => b.length - a.length);
     result.company = candidateCompanies[0];
   }
 
-  // 4) Si no hemos encontrado empresa, buscamos línea en mayúsculas que no sea email/tel/web
   if (!result.company) {
     const upperLines = lines.filter(
       (l) =>
@@ -760,14 +932,11 @@ function parseBusinessCardText(text) {
         !urlRegex.test(l)
     );
     if (upperLines.length > 0) {
-      // La más larga suele ser la empresa
       upperLines.sort((a, b) => b.length - a.length);
       result.company = upperLines[0];
     }
   }
 
-  // 5) Nombre: línea que no sea email/tel/web, no tenga keywords de empresa,
-  // no esté toda en mayúsculas y tenga 2–4 palabras con mayúsculas iniciales.
   const looksLikeName = (line) => {
     if (!line) return false;
     if (emailRegex.test(line) || phoneRegex.test(line) || urlRegex.test(line))
@@ -791,7 +960,6 @@ function parseBusinessCardText(text) {
 
   result.name = nameCandidate;
 
-  // 6) Si no hay empresa y tenemos nombre, probamos línea anterior o posterior
   if (!result.company && result.name) {
     const idx = lines.indexOf(result.name);
     if (idx >= 0) {
