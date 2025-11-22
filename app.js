@@ -35,7 +35,7 @@ let backImageDataUrl = null;
 let cards = [];
 let dashboardVisible = false;
 
-// Referencias globales a inputs y panel OCR
+// Referencias globales a inputs
 let nameInput,
   companyInput,
   positionInput,
@@ -44,9 +44,7 @@ let nameInput,
   websiteInput,
   regionInput,
   categoryInput,
-  notesInput,
-  ocrLinesContainer,
-  ocrStatusGlobal;
+  notesInput;
 
 const GEMINI_MODEL = "gemini-2.5-flash";
 
@@ -91,7 +89,6 @@ window.addEventListener("DOMContentLoaded", () => {
   const rotateBackButton = document.getElementById("rotateBackButton");
   const scanButton = document.getElementById("scanButton");
   const ocrStatus = document.getElementById("ocrStatus");
-  ocrStatusGlobal = ocrStatus;
 
   // Inputs de datos
   nameInput = document.getElementById("nameInput");
@@ -103,7 +100,6 @@ window.addEventListener("DOMContentLoaded", () => {
   regionInput = document.getElementById("regionInput");
   categoryInput = document.getElementById("categoryInput");
   notesInput = document.getElementById("notesInput");
-  ocrLinesContainer = document.getElementById("ocrLinesContainer");
 
   const saveContactButton = document.getElementById("saveContactButton");
   const saveStatus = document.getElementById("saveStatus");
@@ -117,7 +113,7 @@ window.addEventListener("DOMContentLoaded", () => {
   // Si Firebase no está bien configurado, bloqueamos
   if (!app || !auth) {
     authStatus.textContent =
-      "Falta configurar Firebase. Usa 'Configurar API Key de Firebase'.";
+      "Falta configurar Firebase en firebase-config.js.";
     disableApp();
     return;
   }
@@ -231,10 +227,11 @@ window.addEventListener("DOMContentLoaded", () => {
     }
   };
 
-  // --- ESCANEAR CON GEMINI (2.5 Flash) ---
+  // --- ESCANEAR CON GEMINI ---
   scanButton.onclick = async () => {
     if (!frontImageDataUrl || !backImageDataUrl) {
-      ocrStatus.textContent = "Haz las dos fotos (frontal y trasera) antes de escanear.";
+      ocrStatus.textContent =
+        "Haz las dos fotos (frontal y trasera) antes de escanear.";
       return;
     }
 
@@ -246,13 +243,6 @@ window.addEventListener("DOMContentLoaded", () => {
         frontImageDataUrl,
         backImageDataUrl
       );
-
-      if (rawText) {
-        renderOcrLinesPanel(rawText);
-      } else {
-        ocrLinesContainer.innerHTML =
-          "<p>No se han podido obtener líneas de texto.</p>";
-      }
 
       if (parsed) {
         if (parsed.name) nameInput.value = parsed.name;
@@ -267,16 +257,19 @@ window.addEventListener("DOMContentLoaded", () => {
 
         ocrStatus.textContent =
           "Gemini ha rellenado los campos. Revisa y ajusta si hace falta.";
-      } else {
-        ocrStatus.textContent =
-          "Gemini devolvió texto no estructurado. He intentado interpretarlo.";
-        const fallback = parseBusinessCardText(rawText || "");
+      } else if (rawText) {
+        const fallback = parseBusinessCardText(rawText);
         if (fallback.name) nameInput.value = fallback.name;
         if (fallback.company) companyInput.value = fallback.company;
         if (fallback.position) positionInput.value = fallback.position;
         if (fallback.phone) phoneInput.value = fallback.phone;
         if (fallback.email) emailInput.value = fallback.email;
         if (fallback.website) websiteInput.value = fallback.website;
+
+        ocrStatus.textContent =
+          "Gemini devolvió texto no estructurado. He aplicado un análisis automático.";
+      } else {
+        ocrStatus.textContent = "No se ha podido extraer texto de la tarjeta.";
       }
     } catch (err) {
       console.error("❌ Error Gemini:", err);
@@ -682,12 +675,10 @@ async function callGeminiForCard(frontDataUrl, backDataUrl) {
         '  "website": "",\n' +
         '  "region": "",\n' +
         '  "category": "",\n' +
-        '  "notes": "",\n' +
-        '  "raw_lines": ["..."]\n' +
+        '  "notes": ""\n' +
         "}\n" +
         "No incluyas nada de texto fuera del JSON. " +
-        "Si no conoces un campo, déjalo como cadena vacía. " +
-        'En "raw_lines" pon una lista de líneas de texto relevantes extraídas de la tarjeta.',
+        "Si no conoces un campo, déjalo como cadena vacía.",
     },
   ];
 
@@ -742,76 +733,19 @@ async function callGeminiForCard(frontDataUrl, backDataUrl) {
     .trim();
 
   let parsed = null;
-  let rawTextFromJson = "";
 
   if (text) {
     try {
       parsed = JSON.parse(text);
-      if (Array.isArray(parsed.raw_lines)) {
-        rawTextFromJson = parsed.raw_lines.join("\n");
-      }
     } catch (e) {
-      console.warn("No se pudo parsear JSON de Gemini, usando texto bruto", e);
+      console.warn("No se pudo parsear JSON de Gemini, texto devuelto:", text);
     }
   }
 
-  return { parsed, rawText: rawTextFromJson || text };
+  return { parsed, rawText: text };
 }
 
-// Panel de líneas OCR
-function renderOcrLinesPanel(text) {
-  if (!ocrLinesContainer) return;
-
-  ocrLinesContainer.innerHTML = "";
-
-  if (!text) {
-    ocrLinesContainer.innerHTML = "<p>No se detectaron líneas.</p>";
-    return;
-  }
-
-  const lines = text
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0);
-
-  lines.forEach((line) => {
-    const div = document.createElement("div");
-    div.className = "ocr-line-item";
-
-    div.innerHTML = `
-      <div class="ocr-line-text">${line}</div>
-      <div class="ocr-line-buttons">
-        <button class="btn small-btn" data-field="name">Nombre</button>
-        <button class="btn small-btn" data-field="company">Empresa</button>
-        <button class="btn small-btn" data-field="position">Cargo</button>
-        <button class="btn small-btn" data-field="phone">Teléfono</button>
-        <button class="btn small-btn" data-field="email">Email</button>
-        <button class="btn small-btn" data-field="website">Web</button>
-      </div>
-    `;
-
-    div.querySelectorAll("button").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const field = btn.dataset.field;
-
-        if (field === "name") nameInput.value = line;
-        if (field === "company") companyInput.value = line;
-        if (field === "position") positionInput.value = line;
-        if (field === "phone") phoneInput.value = line;
-        if (field === "email") emailInput.value = line;
-        if (field === "website") websiteInput.value = line;
-
-        if (ocrStatusGlobal) {
-          ocrStatusGlobal.textContent = `Asignado: ${field} = "${line}"`;
-        }
-      });
-    });
-
-    ocrLinesContainer.appendChild(div);
-  });
-}
-
-// Parser de texto de tarjeta (fallback)
+// Parser de texto de tarjeta (fallback simple)
 function parseBusinessCardText(text) {
   const result = {
     name: "",
