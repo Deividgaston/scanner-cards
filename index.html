@@ -12,12 +12,9 @@
     <h1>Tarjetas de Visita</h1>
     <p>Escanea tarjetas (frontal y trasera), guarda contactos y gestiona tu red.</p>
 
-    <!-- Botones para configurar claves -->
+    <!-- Botón para configurar SOLO la API key de Gemini -->
     <div style="margin-top:0.75rem; display:flex; gap:0.5rem; justify-content:center; flex-wrap:wrap;">
-      <button class="btn primary-btn" onclick="configurarFirebaseApiKey()">
-        Configurar API Key de Firebase
-      </button>
-      <button class="btn secondary-btn" onclick="configurarGeminiApiKey()">
+      <button class="btn primary-btn" onclick="configurarGeminiApiKey()">
         Configurar API Key de Gemini
       </button>
     </div>
@@ -154,13 +151,6 @@
       <p id="saveStatus" class="status-text"></p>
     </section>
 
-    <!-- Panel de líneas OCR (para ajustar manualmente) -->
-    <section class="card ocr-lines-card">
-      <h3>Líneas detectadas</h3>
-      <p style="font-size:0.85rem;color:#888">Pulsa para asignar las líneas a cada campo.</p>
-      <div id="ocrLinesContainer"></div>
-    </section>
-
     <!-- Listado + botón Dashboard -->
     <section class="card list-card">
       <div class="list-header">
@@ -191,16 +181,6 @@
   </footer>
 
   <script>
-    function configurarFirebaseApiKey() {
-      const actual = localStorage.getItem("firebaseApiKey") || "";
-      const key = prompt("Introduce tu API key de Firebase:", actual);
-      if (key) {
-        localStorage.setItem("firebaseApiKey", key.trim());
-        alert("API key de Firebase guardada. Recarga la página.");
-        location.reload();
-      }
-    }
-
     function configurarGeminiApiKey() {
       const actual = localStorage.getItem("geminiApiKey") || "";
       const key = prompt("Introduce tu API key de Gemini:", actual);
@@ -211,7 +191,6 @@
     }
   </script>
 
-  <!-- Lógica principal -->
   <script type="module" src="app.js"></script>
 </body>
 </html>
